@@ -7,6 +7,7 @@ pushd build > /dev/null
   rm -rf mrc.cache build.h ./*.bin ./*pre* ldoptions option_table.h
   rm -rf cbfstool rmodtool cpu cbfs
   rm -rf generated coreboot*.rom soc util/nvramtool/cli util/nvramtool/accessors
+  rm -f image.img
 popd > /dev/null
 
   if [ -d payloads ]; then
