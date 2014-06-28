@@ -9,10 +9,10 @@ if [ -f .version ]; then
 else
     VERSION="SageBIOS"
 fi
-if [ ROUNDTIME == "" ]; then
+if [ "${ROUNDTIME}" == "" ]; then
 VERSION="${VERSION}-`date +"%Y%m%d_%H%M%S"`-`hostname`"
 else
-VERSION="${VERSION}-`date +"%Y%m%d_%H%"`00:00-`hostname`"
+VERSION="${VERSION}-`date +"%Y%m%d_%H"`0000-`hostname`"
 fi
 echo "Version: ${VERSION}"
 
