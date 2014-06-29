@@ -16,9 +16,7 @@ This code and documentation is free; you can redistribute it and/or modify it un
 
 ### Author
 
-[Byteworks GmbH](http://www.byteworks.ch)
-
-Michael Bischof <<mb@byteworks.ch>>
+- [Byteworks GmbH](http://www.byteworks.ch) - Michael Bischof <<mb@byteworks.ch>>
 
 
 ### Credits
