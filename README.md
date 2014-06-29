@@ -32,66 +32,17 @@ Michael Bischof <mb@byteworks.ch>
 
 ### Setup
 
-#### Install a 64 bit debian 7 (wheezy) base system
+#### Install base system
 
-Most likely it will work with any recent 64 bit linux distribution. However, this documentation
-is focusing only on debian. Feel free to update the documentation for other distributions.
+At the moment two linux distributions are supported:
 
-#### Enable debian testing repository
+[Debian 7 - x86_64](https://github.com/byteworks-ch/pcengines-apu-bios/wiki/Setup-Debian-7-(Wheezy))
 
-```
-cat<<__EOT__>>/etc/apt/sources.list
-
-# Testing repository - main, contrib and non-free branches
-deb http://http.us.debian.org/debian testing main non-free contrib
-deb-src http://http.us.debian.org/debian testing main non-free contrib
+[Ubuntu 14.04 LTS - x86_64](https://github.com/byteworks-ch/pcengines-apu-bios/wiki/Setup-Ubuntu-14.04-LTS-(Trusty-Tahr))
 
 
-# Testing security updates repository
-deb http://security.debian.org/ testing/updates main contrib non-free
-deb-src http://security.debian.org/ testing/updates main contrib non-free
+Most likely it will work on any recent 64 bit linux distribution. Feel free to try. I'm happy to update the instructions.
 
-__EOT__
-```
-
-#### Update package database
-
-`apt-get update`
-
-#### Install additional packages
-
-`apt-get install strace ltrace lsof vim git syslinux dosfstools`
-
-#### Update glibc to >= 2.14
-
-`apt-get install --only-upgrade libc6`
-
-This is required by the Sage EDK.
-
-#### Change default shell to bash
-
-```
-echo "dash dash/sh boolean false" | debconf-set-selections
-DEBIAN_FRONTEND=noninteractive dpkg-reconfigure dash
-```
-
-#### Install Sage EDK
-
-Download the Sage EDK here:
-http://www.file-upload.net/download-9137568/sage_edk-3.00.00_33-linux-x86_64.tar.gz.html
-and copy the file to the system you've just installed.
-
-```
-tar xfvz sage_edk-3.00.00_33-linux-x86_64.tar.gz -C /opt/
-
-cat<<__EOT__>>/etc/profile.d/sage_edk.sh
-export SAGE_HOME=/opt/sage_edk
-__EOT__
-```
-
-Make sure you either logout and login again or update your environment:
-
-`source /etc/profile.d/sage_edk.sh`
 
 ### Build
 
