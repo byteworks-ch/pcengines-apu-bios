@@ -1,5 +1,35 @@
 # pcengines-apu-bios
 
+This documentation covers the whole process of building and updating the bios for the [PC Engines apu system board](http://www.pcengines.ch/apu.htm).
+
+## Project
+
+### Status
+
+This software is currently stable, but use it at your own risk. If you have any issues or feature requests, we would love to know, please open an issue. Contributions and pull requests are also very welcome.
+
+
+### License
+
+This code and documentation is free; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation; either version 2 of the License, or (at your option) any later version.
+
+
+### Author
+
+[Byteworks GmbH](http://www.byteworks.ch)
+
+Michael Bischof <mb@byteworks.ch>
+
+
+### Credits
+
+- [Sage Electronic Engineering](http://www.se-eng.com)  - Development of the bios on behalf of PC Engines
+- [PC Engines](http://www.pcengines.ch) - Development of the apu system board, flashing image, ...
+- Daniel Kern <<info@kromlech.ch>> - Testing and documentation fixes
+
+
+## Instructions
+
 ### Setup
 
 #### Install a 64 bit debian 7 (wheezy) base system
@@ -24,6 +54,10 @@ deb-src http://security.debian.org/ testing/updates main contrib non-free
 __EOT__
 ```
 
+#### Update package database
+
+`apt-get update`
+
 #### Install additional packages
 
 `apt-get install strace ltrace lsof vim git syslinux dosfstools`
@@ -36,9 +70,10 @@ This is required by the Sage EDK.
 
 #### Change default shell to bash
 
-`dpkg-reconfigure dash`
-
-Make sure you select no, this way bash will be setup as the default shell.
+```
+echo "dash dash/sh boolean false" | debconf-set-selections
+DEBIAN_FRONTEND=noninteractive dpkg-reconfigure dash
+```
 
 #### Install Sage EDK
 
@@ -58,7 +93,7 @@ Make sure you either logout and login again or update your environment:
 
 `source /etc/profile.d/sage_edk.sh`
 
-### Build
+### Build
 
 #### Get bios source code
 
@@ -170,4 +205,10 @@ map auto_home on /home (autofs, automounted, nobrowse)
 If you see the device listed in the output unmount it:
 
 `diskutil unmount /dev/disk2`
+
+
+### Recovery
+
+In the case that something went wrong with the bios update, the bios can be restored using the [flash recovery board lpc1aapu](http://www.pcengines.ch/lpc1aapu.htm) by PC Engines.
+I recommend to get one of these before starting to play.
 
