@@ -55,7 +55,6 @@
 
 void *cbfs_load_optionrom(struct cbfs_media *media, uint16_t vendor,
 			  uint16_t device, void * dest);
-void *cbfs_load_payload(struct cbfs_media *media, const char *name);
 void *cbfs_load_stage(struct cbfs_media *media, const char *name);
 
 /* Simple buffer for streaming media. */
@@ -76,13 +75,12 @@ void *cbfs_simple_buffer_unmap(struct cbfs_simple_buffer *buffer,
 // Utility functions
 int run_address(void *f);
 
-/* Defined in src/lib/selfboot.c */
-struct lb_memory;
-void *selfload(struct lb_memory *mem, struct cbfs_payload *payload);
-void selfboot(void *entry);
-
 /* Defined in individual arch / board implementation. */
 int init_default_cbfs_media(struct cbfs_media *media);
+
+#if defined(__PRE_RAM__)
+struct romstage_handoff;
+struct cbmem_entry;
 
 #if CONFIG_RELOCATABLE_RAMSTAGE && defined(__PRE_RAM__)
 /* The cache_loaded_ramstage() and load_cached_ramstage() functions are defined
@@ -90,9 +88,6 @@ int init_default_cbfs_media(struct cbfs_media *media);
  * cache and load the ramstage for quick S3 resume. By default a copy of the
  * relocated ramstage is saved using the cbmem infrastructure. These
  * functions are only valid during romstage. */
-
-struct romstage_handoff;
-struct cbmem_entry;
 
 /* The implementer of cache_loaded_ramstage() may use the romstage_handoff
  * structure to store information, but note that the handoff variable can be
@@ -106,7 +101,22 @@ cache_loaded_ramstage(struct romstage_handoff *handoff,
 void * __attribute__((weak))
 load_cached_ramstage(struct romstage_handoff *handoff,
                      const struct cbmem_entry *ramstage);
+#else  /* CONFIG_RELOCATABLE_RAMSTAGE */
+
+static inline void cache_loaded_ramstage(struct romstage_handoff *handoff,
+			const struct cbmem_entry *ramstage, void *entry_point)
+{
+}
+
+static inline void *
+load_cached_ramstage(struct romstage_handoff *handoff,
+			const struct cbmem_entry *ramstage)
+{
+	return NULL;
+}
+
 #endif /* CONFIG_RELOCATABLE_RAMSTAGE */
+#endif /* defined(__PRE_RAM__) */
 
 #if IS_ENABLED(CONFIG_MAINBOARD_BOOTORDER)
 void read_bootorder_from_cbfs( char *filename, struct bootorder_container *bootorder_ptr, char **data_ptr);

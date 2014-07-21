@@ -358,3 +358,24 @@ long int strtol(const char *ptr, char **endptr, int base)
 
     return ret * negative;
 }
+
+/**
+ * Find a substring within a string.
+ *
+ * @param h The haystack string.
+ * @param n The needle string (substring).
+ * @return A pointer to the first occurence of the substring in
+ * the string, or NULL if the substring was not encountered within the string.
+ */
+char *strstr(const char *h, const char *n)
+{
+	int hn = strlen(h);
+	int nn = strlen(n);
+	int i;
+
+	for (i = 0; i <= hn - nn; i++)
+		if (!memcmp(&h[i], n, nn))
+			return (char *)&h[i];
+
+	return NULL;
+}

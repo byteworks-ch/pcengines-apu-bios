@@ -46,6 +46,7 @@ void pci_ehci_dbg_enable(pci_devfn_t dev, unsigned long base);
  */
 struct device;
 void pci_ehci_read_resources(struct device *dev);
+int pci_ehci_dbg_enabled(struct device *dev);
 #endif
 #endif
 

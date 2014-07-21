@@ -64,12 +64,20 @@ handle_10(struct bregs *regs)
     debug_enter(regs, DEBUG_HDL_10);
     // dont do anything, since the VGA BIOS handles int10h requests
 #if CONFIG_INT10_SERIAL_CONSOLE
-    // If we don't have a vbios send it to the COM port
-
+    /* If we don't have a vbios send it to the COM port. The video_mode
+     * index in the BDA is used to determine if the INT10 character
+     * will be output to the serial console. This feature is used
+     * to prevent option roms and printf's in seabios from outputting
+     * characters to the serial console when no serial console
+     * output is desired.
+     */
     switch (regs->ah) {
     case 0x0A: // Write char at cursor
     case 0x0E: // Write text in tele-type mode
-        int10_com_output(regs->al);
+#if CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE
+        if (GET_BDA(video_mode) == UART_OUTPUT_ENABLED)
+#endif
+            int10_com_output(regs->al);
         break;
     default:
         dprintf(2, "unhandled INT10 ah=%x al=%x\n",regs->ah,regs->al);

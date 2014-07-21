@@ -396,6 +396,10 @@ static void sb800_enable(device_t dev)
 		printk(BIOS_DEBUG, "SMBUS: 0:14h.0\n");
 		printk(BIOS_INFO, "sm_init()\n");
 		clear_ioapic(IO_APIC_ADDR);
+#if CONFIG_CPU_AMD_AGESA
+		/* Assign the ioapic ID the next available number after the processor core local APIC IDs */
+		setup_ioapic(IO_APIC_ADDR, CONFIG_MAX_CPUS);
+#else
 		/* I/O APIC IDs are normally limited to 4-bits. Enforce this limit. */
 #if (CONFIG_APIC_ID_OFFSET == 0 && CONFIG_MAX_CPUS * CONFIG_MAX_PHYSICAL_CPUS < 16)
 		/* Assign the ioapic ID the next available number after the processor core local APIC IDs */
@@ -405,6 +409,7 @@ static void sb800_enable(device_t dev)
 		setup_ioapic(IO_APIC_ADDR, 0);
 #else
 #error "The processor APIC IDs must be lifted to make room for the I/O APIC ID"
+#endif
 #endif
 		break;
 

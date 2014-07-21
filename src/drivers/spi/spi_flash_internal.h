@@ -72,12 +72,15 @@ int spi_flash_cmd_erase(struct spi_flash *flash, u8 erase_cmd,
 
 /* Manufacturer-specific probe functions */
 struct spi_flash *spi_flash_probe_spansion(struct spi_slave *spi, u8 *idcode);
+struct spi_flash *spi_flash_probe_amic(struct spi_slave *spi, u8 *idcode);
 struct spi_flash *spi_flash_probe_atmel(struct spi_slave *spi, u8 *idcode);
 struct spi_flash *spi_flash_probe_eon(struct spi_slave *spi, u8 *idcode);
 struct spi_flash *spi_flash_probe_macronix(struct spi_slave *spi, u8 *idcode);
+struct spi_flash *spi_flash_probe_micron(struct spi_slave *spi, u8 *idcode);
 struct spi_flash *spi_flash_probe_sst(struct spi_slave *spi, u8 *idcode);
 struct spi_flash *spi_flash_probe_stmicro(struct spi_slave *spi, u8 *idcode);
 struct spi_flash *spi_flash_probe_winbond(struct spi_slave *spi, u8 *idcode);
 struct spi_flash *spi_flash_probe_gigadevice(struct spi_slave *spi,
 					     u8 *idcode);
+struct spi_flash *spi_flash_probe_adesto(struct spi_slave *spi, u8 *idcode);
 struct spi_flash *spi_fram_probe_ramtron(struct spi_slave *spi, u8 *idcode);

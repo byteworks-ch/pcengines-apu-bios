@@ -30,6 +30,7 @@
 #include <console/console.h>
 #include <console/loglevel.h>
 #include <cpu/x86/mtrr.h>
+#include "cpu/amd/car.h"
 #include "agesawrapper.h"
 #include "cpu/x86/bist.h"
 #include "drivers/pc80/i8254.c"
@@ -44,9 +45,7 @@
 #include "src/southbridge/amd/cimx/cimx_util.h"
 #include <cbfs.h>
 #include "gpio_ftns.h"
-
-void disable_cache_as_ram(void); /* cache_as_ram.inc */
-void cache_as_ram_main(unsigned long bist, unsigned long cpu_init_detectedx);
+#include <pc80/mc146818rtc.h>
 
 #define MSR_MTRR_VARIABLE_BASE6  0x020C
 #define MSR_MTRR_VARIABLE_MASK6  0x020D
@@ -58,6 +57,9 @@ void cache_as_ram_main(unsigned long bist, unsigned long cpu_init_detectedx);
 #define SIO_COM1_LDN             0x02
 #define SIO_ENB_REG              0x30
 #define SIO_LDN_DIS              0x00
+#define MSR_CPUID_NAME_STRING0   0xC0010030
+#define MSR_CPUID_NAME_STRING1   0xC0010031
+#define MSR_CPUID_NAME_STRING2   0XC0010032
 
 void cache_as_ram_main(unsigned long bist, unsigned long cpu_init_detectedx)
 {
@@ -112,9 +114,26 @@ void cache_as_ram_main(unsigned long bist, unsigned long cpu_init_detectedx)
 
 		post_code(0x31);
 
-		/* Enable COM1 serial console if bootorder file says "scon1" OR GPIO_187 is low. */
-		if (cbfs_find_string("scon1", "bootorder") || !read_gpio(mmio_base, GPIO_187))
+		/*
+		 * This board has a feature that allows the serial console to be controlled run-time
+		 * using the SCON variable which is stored in the bootorder file. The setting is
+		 * altered using the sortbootorder payload (named 'setup' at the F12 prompt).
+		 * If SCON0 is the current setting it can be over ridden by pressing a switch on
+		 * the back of the case which grounds GPIO_187. When SCON1 (enabled) all of the
+		 * normal serial console messages are displayed. When SCON0 (disabled) all of
+		 * the serial console messages are prevented. The combined state of SCON and
+		 * GPIO_187 is used to alter the serial console "debug_level" value which is
+		 * stored in CMOS. Seabios also supports this feature by checking the "debug_level"
+		 * setting. Seabios also controls the INT10 to serial console function prior to
+		 * the booting of a device.
+		 */
+		int cmos_console_setting = 0;
+		int baud_rate = 0; // selects 115200 baud from table
+
+		if (cbfs_find_string("scon1", "bootorder") || !read_gpio(mmio_base, GPIO_187)) {
 			nct5104d_enable_serial(SERIAL_DEV, CONFIG_TTYS0_BASE); /* Enable UART - COM1 port */
+			cmos_console_setting = CONFIG_DEFAULT_CONSOLE_LOGLEVEL;
+		}
 		else { /* disable COM1 */
 			outb( SIO_UNLOCK,   CONFIG_SIO_PORT);     /* unlock SIO */
 			outb( SIO_UNLOCK,   CONFIG_SIO_PORT);     /* unlock SIO */
@@ -124,9 +143,22 @@ void cache_as_ram_main(unsigned long bist, unsigned long cpu_init_detectedx)
 			outb( SIO_LDN_DIS,  CONFIG_SIO_PORT + 1); /* disable it */
 			outb( SIO_LOCK,     CONFIG_SIO_PORT);     /* lock SIO */
 		}
+#if CONFIG_USE_OPTION_TABLE
+		/*
+		 * Set the "debug_level" setting in CMOS according to the state of SCON and GPIO_187
+		 * see the romstage.c file for additional information.
+		 */
+		set_option("debug_level", &cmos_console_setting);
+		set_option("baud_rate", &baud_rate);
+#endif
 		console_init();
 	}
+
 	printk(BIOS_CRIT, "PC Engines APU BIOS build date: %s\n", __DATE__);
+	if (read_gpio(mmio_base, GPIO_16))
+		printk(BIOS_CRIT, "Total memory 4096 MB\n");
+	else
+		printk(BIOS_CRIT, "Total memory 2048 MB\n");
 
 	/* Halt if there was a built in self test failure */
 	post_code(0x34);
@@ -160,6 +192,13 @@ void cache_as_ram_main(unsigned long bist, unsigned long cpu_init_detectedx)
 		printk(BIOS_DEBUG, "error level: %x \n", val);
 	else
 		printk(BIOS_DEBUG, "passed.\n");
+
+	/* show the CPUID strings */
+	msr_t msr_str[4] = { {0},{0},{0},{0} };
+	msr_str[0] = rdmsr(MSR_CPUID_NAME_STRING0);
+	msr_str[1] = rdmsr(MSR_CPUID_NAME_STRING1);
+	msr_str[2] = rdmsr(MSR_CPUID_NAME_STRING2);
+	printk(BIOS_CRIT, "%s\n", (char *)msr_str);
 
 #if CONFIG_HAVE_ACPI_RESUME
 	if (!acpi_is_wakeup_early()) { /* Check for S3 resume */

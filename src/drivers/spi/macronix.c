@@ -100,7 +100,7 @@ static const struct macronix_spi_flash_params macronix_spi_flash_table[] = {
 		.pages_per_sector = 16,
 		.sectors_per_block = 16,
 		.nr_blocks = 128,
-		.name = "MX25L6405D",
+		.name = "MX25L6405D", /* MX25L6436E */
 	},
 	{
 		.idcode = 0x2018,
@@ -125,6 +125,14 @@ static const struct macronix_spi_flash_params macronix_spi_flash_table[] = {
 		.sectors_per_block = 16,
 		.nr_blocks = 256,
 		.name = "MX25U12835F",
+	},
+	{
+		.idcode = 0x2536,
+		.page_size = 256,
+		.pages_per_sector = 16,
+		.sectors_per_block = 16,
+		.nr_blocks = 64,
+		.name = "MX25L3239E",
 	},
 };
 

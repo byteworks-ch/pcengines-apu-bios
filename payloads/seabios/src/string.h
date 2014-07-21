@@ -28,5 +28,6 @@ char *strtcpy(char *dest, const char *src, size_t len);
 char *strchr(const char *s, int c);
 char *nullTrailingSpace(char *buf);
 long int strtol(const char *ptr, char **endptr, int base);
+char *strstr(const char *h, const char *n);
 
 #endif // string.h

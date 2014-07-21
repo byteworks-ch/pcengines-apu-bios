@@ -1,9 +1,28 @@
+/*
+ * This file is part of the coreboot project.
+ *
+ * Copyright (C) 2014 Sage Electronic Engineering, LLC.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
 #ifndef DEVICE_H
 #define DEVICE_H
 
 #include <stdint.h>
 #include <stddef.h>
-#include <arch/rules.h>
+#include <rules.h>
 #include <device/resource.h>
 #include <device/path.h>
 #include <arch/io.h>
@@ -182,7 +201,9 @@ device_t alloc_find_dev(struct bus *parent, struct device_path *path);
 device_t dev_find_device (u16 vendor, u16 device, device_t from);
 device_t dev_find_class (unsigned int class, device_t from);
 device_t dev_find_slot (unsigned int bus, unsigned int devfn);
+device_t dev_find_smbus_device(unsigned int pci_fd, unsigned int addr);
 device_t dev_find_slot_on_smbus (unsigned int bus, unsigned int addr);
+device_t dev_find_slot_pnp(u16 port, u16 device);
 device_t dev_find_lapic(unsigned apic_id);
 int dev_count_cpu(void);
 
@@ -197,6 +218,7 @@ void set_cpu_topology(device_t cpu, unsigned node, unsigned package, unsigned co
 	set_cpu_topology(cpu, 0, package, core, thread)
 
 /* Debug functions */
+void display_device_info(device_t dev);
 void print_resource_tree(struct device * root, int debug_level,
 			 const char *msg);
 void show_devs_tree(struct device *dev, int debug_level, int depth, int linknum);

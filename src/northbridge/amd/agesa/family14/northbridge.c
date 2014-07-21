@@ -573,6 +573,7 @@ static void setup_uma_memory(void)
 
 static void domain_set_resources(device_t dev)
 {
+	uint64_t c6base;
 	printk(BIOS_DEBUG, "\nFam14h - %s\n", __func__);
 	printk(BIOS_DEBUG, "  amsr - incoming dev = %08x\n", (u32) dev);
 
@@ -755,6 +756,17 @@ static void domain_set_resources(device_t dev)
 #else
 	set_top_of_ram(ramtop);
 #endif
+
+	// Mark the C6 memory region as RESERVED if it is used
+	c6base = (uint64_t)pci_read_config32(dev_find_slot(0,PCI_DEVFN(0x18,0x4)), 0x12c);
+	c6base <<= 24; // C6BASE bits [35:24] are stored in bits [11:0]
+	if (c6base && ((c6base == bsp_topmem2()) || (c6base == bsp_topmem()))) {
+		basek = (resource_t)(c6base >> 10);
+		sizek = 0x01000000 >> 10; // 16MB size of C6 region
+		reserved_ram_resource(dev, (idx | 0), basek, sizek);
+		idx += 0x10;
+		printk(BIOS_DEBUG, "adsr:add C6 reserved 16MB basek=%08llx, sizek=%08llx\n", basek, sizek);
+	}
 
 	for (link = dev->link_list; link; link = link->next) {
 		if (link->children) {

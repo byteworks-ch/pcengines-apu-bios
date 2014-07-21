@@ -7,6 +7,7 @@
  * Copyright (C) 2004 Li-Ta Lo <ollie@lanl.gov>
  * Copyright (C) 2005-2006 Tyan
  * (Written by Yinghai Lu <yhlu@tyan.com> for Tyan)
+ * Copyright (C) 2014 Sage Electronic Engineering, LLC.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,9 +26,10 @@
 #include <console/console.h>
 #include <device/device.h>
 #include <device/path.h>
-#include <device/pci.h>
+#include <device/pci_def.h>
 #include <device/resource.h>
 #include <string.h>
+#include <lib.h>
 
 /**
  * See if a device structure exists for path.
@@ -70,6 +72,30 @@ struct device *dev_find_slot(unsigned int bus, unsigned int devfn)
 	return result;
 }
 
+
+/**
+ * Given an SMBus bus and a device number, find the device structure.
+ *
+ * @param pci_bfd The pci device_func value.
+ * @param addr A device number.
+ * @return Pointer to the device structure (if found), 0 otherwise.
+ */
+struct device *dev_find_smbus_device(unsigned int pci_fd, unsigned int addr)
+{
+	struct device *dev, *result;
+
+	result = 0;
+	for (dev = all_devices; dev; dev = dev->next) {
+		if ((dev->path.type == DEVICE_PATH_I2C) &&
+		    (dev->bus->dev->path.pci.devfn == pci_fd) &&
+		    (dev->path.i2c.device == addr)) {
+			result = dev;
+			break;
+		}
+	}
+	return result;
+}
+
 /**
  * Given an SMBus bus and a device number, find the device structure.
  *
@@ -91,6 +117,27 @@ struct device *dev_find_slot_on_smbus(unsigned int bus, unsigned int addr)
 		}
 	}
 	return result;
+}
+
+/**
+ * Given a PnP port and a device number, find the device structure.
+ *
+ * @param port The I/O port.
+ * @param device Logical device number.
+ * @return Pointer to the device structure (if found), 0 otherwise.
+ */
+struct device *dev_find_slot_pnp(u16 port, u16 device)
+{
+	struct device *dev;
+
+	for (dev = all_devices; dev; dev = dev->next) {
+		if ((dev->path.type == DEVICE_PATH_PNP) &&
+		    (dev->path.pnp.port == port) &&
+		    (dev->path.pnp.device == device)) {
+			return dev;
+		}
+	}
+	return 0;
 }
 
 /**
@@ -211,6 +258,25 @@ u32 dev_path_encode(device_t dev)
 	}
 
 	return ret;
+}
+
+void display_device_info(device_t dev) {
+	printk(BIOS_INFO, "Device Name     : %s\n",dev_name(dev));
+	printk(BIOS_INFO, "Device Path     : %s ", dev_path(dev));
+	printk(BIOS_INFO, "(%s)\n", dev->enabled ? "Enabled" : "Disabled");
+	printk(BIOS_INFO, "Device Ops ptr  : %p\n",dev->ops);
+	printk(BIOS_INFO, "Device ID       : 0x%04x\n",dev->device);
+	printk(BIOS_INFO, "Vendor ID       : 0x%04x\n",dev->vendor);
+	printk(BIOS_INFO, "Class ID        : 0x%06x\n",dev->class);
+	printk(BIOS_INFO, "ops_smbus_bus   : %p\n",dev->ops->ops_smbus_bus);
+	printk(BIOS_INFO, "read_resources  : %p\n",dev->ops->read_resources);
+	printk(BIOS_INFO, "init            : %p\n",dev->ops->init);
+	printk(BIOS_INFO, "scan_bus        : %p\n",dev->ops->scan_bus);
+	printk(BIOS_INFO, "enable_resources: %p\n",dev->ops->enable_resources);
+
+	printk(BIOS_INFO, "Device Address: %p\n",dev);
+	hexdump(BIOS_INFO, dev, sizeof(struct device));
+	printk(BIOS_INFO, "\n\n");
 }
 
 /*

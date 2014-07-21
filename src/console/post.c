@@ -166,8 +166,8 @@ void post_code(uint8_t value)
 #if IS_ENABLED(CONFIG_CMOS_POST)
 	cmos_post_code(value);
 #endif
-#if IS_ENABLED(CONFIG_IO_POST)
-	outb(value, CONFIG_IO_POST_PORT);
+#if IS_ENABLED(CONFIG_POST_IO)
+	outb(value, CONFIG_POST_IO_PORT);
 #endif
 #endif
 	mainboard_post(value);

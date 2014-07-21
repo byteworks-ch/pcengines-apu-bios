@@ -35,7 +35,7 @@ static int isprint(int c)
 /*
  * Log memory contents at a specified print level
  */
-void hexdump(int8_t level, const void *memory, uint32_t length)
+void hexdump(int8_t level, const void *memory, size_t length)
 {
 	uint32_t i;
 	uint8_t *m;
@@ -94,3 +94,20 @@ void hexdump(int8_t level, const void *memory, uint32_t length)
 	}
 }
 
+void hexdump32(char LEVEL, const void *d, size_t len)
+{
+	int count = 0;
+
+	while (len > 0) {
+		if (count % 8 == 0) {
+			printk(LEVEL, "\n");
+			printk(LEVEL, "%p:", d);
+		}
+		printk(LEVEL, " 0x%08lx", *(unsigned long *)d);
+		count++;
+		len--;
+		d += 4;
+	}
+
+	printk(LEVEL, "\n\n");
+}

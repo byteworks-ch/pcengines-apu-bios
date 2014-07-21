@@ -111,7 +111,7 @@ int spi_flash_cmd_poll_bit(struct spi_flash *flash, unsigned long timeout,
 	int ret;
 	u8 status;
 
-	timebase = timeout;
+	timebase = timeout * 500;
 	do {
 		ret = spi_flash_cmd_read(spi, &cmd, 1, &status, 1);
 		if (ret)
@@ -120,7 +120,7 @@ int spi_flash_cmd_poll_bit(struct spi_flash *flash, unsigned long timeout,
 		if ((status & poll_bit) == 0)
 			break;
 
-		udelay(500);
+		udelay(1);
 	} while (timebase--);
 
 	if ((status & poll_bit) == 0)
@@ -219,6 +219,9 @@ static struct {
 	struct spi_flash *(*probe) (struct spi_slave *spi, u8 *idcode);
 } flashes[] = {
 	/* Keep it sorted by define name */
+#if IS_ENABLED(CONFIG_SPI_FLASH_AMIC)
+	{ 0, 0x37, spi_flash_probe_amic, },
+#endif
 #if IS_ENABLED(CONFIG_SPI_FLASH_ATMEL)
 	{ 0, 0x1f, spi_flash_probe_atmel, },
 #endif
@@ -246,6 +249,9 @@ static struct {
 	/* Keep it sorted by best detection */
 #if IS_ENABLED(CONFIG_SPI_FLASH_STMICRO)
 	{ 0, 0xff, spi_flash_probe_stmicro, },
+#endif
+#if CONFIG_SPI_FLASH_ADESTO
+	{ 0, 0x1f, spi_flash_probe_adesto, },
 #endif
 };
 #define IDCODE_LEN (IDCODE_CONT_LEN + IDCODE_PART_LEN)

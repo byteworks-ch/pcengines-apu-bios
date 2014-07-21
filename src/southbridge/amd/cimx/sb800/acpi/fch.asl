@@ -2,6 +2,7 @@
  * This file is part of the coreboot project.
  *
  * Copyright (C) 2011 Advanced Micro Devices, Inc.
+ * Copyright (C) 2013-2014 Sage Electronic Engineering, LLC
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +21,9 @@
 /* South Bridge */
 /*  _SB.PCI0 */
 
+	Name(SUPP,0) // PCI _OSC Support Field value
+	Name(CTRL,0) // PCI _OSC Control Field value
+
 /* Operating System Capabilities Method */
 Method(_OSC,4)
 {
@@ -27,6 +31,10 @@ Method(_OSC,4)
 	CreateDWordField(Arg3,0,CDW1)
 	CreateDWordField(Arg3,4,CDW2)
 	CreateDWordField(Arg3,8,CDW3)
+
+	// Save Capabilities DWORD2 & 3
+	Store (CDW2, SUPP)
+	Store (CDW3, CTRL)
 
 	/* Check for proper PCI/PCIe UUID */
 	If(LEqual(Arg0,ToUUID("33DB4D5B-1FF7-401C-9657-7441C03DD766")))
@@ -76,12 +84,6 @@ Device(STCR) {
 Device(SBUS) {
 	Name(_ADR, 0x00140000)
 } /* end SBUS */
-
-/* Primary (and only) IDE channel */
-Device(IDEC) {
-	Name(_ADR, 0x00140001)
-	#include "acpi/ide.asl"
-} /* end IDEC */
 
 #include "audio.asl"
 

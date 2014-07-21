@@ -32,6 +32,11 @@
 #include "util.h" // kbd_init
 #include "romfile.h" // struct romfile_s
 #include "fw/coreboot.h" // cbfs_romfile_s
+#include "hw/serialio.h" // cbfs_romfile_s
+
+#if CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE
+extern int cmos_serial_console_debug_level;
+#endif
 
 /****************************************************************
  * BIOS initialization and hardware setup
@@ -88,6 +93,18 @@ bda_init(void)
 
     struct bios_data_area_s *bda = MAKE_FLATPTR(SEG_BDA, 0);
     memset(bda, 0, sizeof(*bda));
+
+#if CONFIG_INT10_SERIAL_CONSOLE
+    // set the default INT10 to serial console value
+#if CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE
+    if (!cmos_serial_console_debug_level)
+        SET_BDA(video_mode, UART_OUTPUT_DISABLED);
+    else
+        SET_BDA(video_mode, UART_OUTPUT_ENABLED);
+#else
+    SET_BDA(video_mode, UART_OUTPUT_ENABLED);
+#endif
+#endif
 
     int esize = EBDA_SIZE_START;
     u16 ebda_seg = EBDA_SEGMENT_START;
@@ -247,12 +264,8 @@ maininit(void)
     optionrom_setup();
 
     // show system info before the F12 menu
-    if (CONFIG_DISPLAY_SYSTEM_INFO) {
+    if (CONFIG_DISPLAY_SYSTEM_INFO)
         dprintf(1, "\nBuild date: %s\n", __DATE__);
-        u64 mem_size = find_coreboot_mem_size();
-        if (mem_size)
-            dprintf(1, "System memory size: %d MB\n", (u32)(mem_size / 0x100000));
-    }
 
     // Allow user to modify overall boot order.
     interactive_bootmenu();
@@ -349,7 +362,6 @@ handle_post(void)
         return;
 
     serial_debug_preinit();
-    i2c_debug_preinit();
     debug_banner();
 #if CONFIG_PRINT_TIMESTAMPS
     tscval = rdtscll();

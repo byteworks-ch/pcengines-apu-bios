@@ -8,15 +8,7 @@
 #include <console/console.h>
 #include <console/vtxprintf.h>
 
-#if !defined (__ROMCC__) && !defined(__SMM__)
-#define DATA_ARG , data
-#define DATA_ARG_DECL , void *data
-#else
-#define DATA_ARG
-#define DATA_ARG_DECL
-#endif
-
-#define call_tx(x) tx_byte(x DATA_ARG)
+#define call_tx(x) tx_byte(x, data)
 
 /* haha, don't need ctype.c */
 #define isdigit(c)	((c) >= '0' && (c) <= '9')
@@ -40,9 +32,9 @@ static int skip_atoi(const char **s)
 #define SPECIAL	32		/* 0x */
 #define LARGE	64		/* use 'ABCDEF' instead of 'abcdef' */
 
-static int number(void (*tx_byte)(unsigned char byte DATA_ARG_DECL),
-	unsigned long long num, int base, int size, int precision, int type
-	DATA_ARG_DECL)
+static int number(void (*tx_byte)(unsigned char byte, void *data),
+	unsigned long long num, int base, int size, int precision, int type,
+	void *data)
 {
 	char c,sign,tmp[66];
 	const char *digits="0123456789abcdefghijklmnopqrstuvwxyz";
@@ -112,12 +104,8 @@ static int number(void (*tx_byte)(unsigned char byte DATA_ARG_DECL),
 }
 
 
-#if !defined (__ROMCC__) && !defined(__SMM__)
-int vtxdprintf(void (*tx_byte)(unsigned char byte, void *data),
+int vtxprintf(void (*tx_byte)(unsigned char byte, void *data),
 	       const char *fmt, va_list args, void *data)
-#else
-int vtxprintf(void (*tx_byte)(unsigned char byte), const char *fmt, va_list args)
-#endif
 {
 	int len;
 	unsigned long long num;
@@ -129,14 +117,9 @@ int vtxprintf(void (*tx_byte)(unsigned char byte), const char *fmt, va_list args
 	int field_width;	/* width of output field */
 	int precision;		/* min. # of digits for integers; max
 				   number of chars for from string */
-	int qualifier;		/* 'h', 'l', or 'L' for integer fields */
+	int qualifier;		/* 'h', 'H', 'l', or 'L' for integer fields */
 
 	int count;
-
-#if defined(__SMM__) && CONFIG_SMM_TSEG
-	/* Fix pointer in TSEG */
-	tx_byte = console_tx_byte;
-#endif
 
 	for (count=0; *fmt ; ++fmt) {
 		if (*fmt != '%') {
@@ -194,6 +177,10 @@ repeat:
 				qualifier = 'L';
 				++fmt;
 			}
+			if (*fmt == 'h') {
+				qualifier = 'H';
+				++fmt;
+			}
 		}
 
 		/* default base */
@@ -232,7 +219,7 @@ repeat:
 			}
 			count += number(tx_byte,
 				(unsigned long) va_arg(args, void *), 16,
-				field_width, precision, flags DATA_ARG);
+				field_width, precision, flags, data);
 			continue;
 
 		case 'n':
@@ -287,26 +274,16 @@ repeat:
 			num = (unsigned short) va_arg(args, int);
 			if (flags & SIGN)
 				num = (short) num;
+		} else if (qualifier == 'H') {
+			num = (unsigned char) va_arg(args, int);
+			if (flags & SIGN)
+				num = (signed char) num;
 		} else if (flags & SIGN) {
 			num = va_arg(args, int);
 		} else {
 			num = va_arg(args, unsigned int);
 		}
-		count += number(tx_byte, num, base, field_width, precision, flags DATA_ARG);
+		count += number(tx_byte, num, base, field_width, precision, flags, data);
 	}
 	return count;
 }
-
-
-#if !defined (__ROMCC__) && !defined(__SMM__)
-static void wrap_tx_byte (unsigned char byte, void *data)
-{
-  void (*tx_byte)(unsigned char byte) = data;
-  tx_byte (byte);
-}
-
-int vtxprintf(void (*tx_byte)(unsigned char byte), const char *fmt, va_list args)
-{
-  return vtxdprintf(wrap_tx_byte, fmt, args, tx_byte);
-}
-#endif

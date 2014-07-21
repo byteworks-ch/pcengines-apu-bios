@@ -48,4 +48,8 @@
 #define NCT5104D_GPIO1 ((1 << 8) | NCT5104D_GPIO_V)
 #define NCT5104D_GPIO6 ((6 << 8) | NCT5104D_GPIO_V)
 
-#endif
+void nct5104d_enable_serial(device_t dev, u16 iobase);
+void pnp_enter_extended_mode(device_t dev);
+void pnp_exit_extended_mode(device_t dev);
+
+#endif /* SUPERIO_NUVOTON_NCT5104D_NCT5104D_H */

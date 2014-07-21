@@ -1,3 +1,22 @@
+/*
+ * This file is part of the coreboot project.
+ *
+ * Copyright (C) 2014 Sage Electronic Engineering, LLC.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
 #ifndef DEVICE_SMBUS_H
 #define DEVICE_SMBUS_H
 
@@ -19,6 +38,10 @@ struct smbus_bus_operations {
 	int (*process_call)(device_t dev, u8 cmd, u16 data);
 	int (*block_read)  (device_t dev, u8 cmd, u8 bytes, u8 *buffer);
 	int (*block_write) (device_t dev, u8 cmd, u8 bytes, const u8 *buffer);
+
+	/* Handle 16 bit addressing */
+	int (*extended_read_byte)   (device_t dev, u16 addr);
+	int (*extended_write_byte)  (device_t dev, u16 addr, u8 value);
 };
 
 static inline const struct smbus_bus_operations *ops_smbus_bus(struct bus *bus)
@@ -46,5 +69,8 @@ int smbus_write_word(device_t dev, u8 addr, u16 val);
 int smbus_process_call(device_t dev, u8 cmd, u16 data);
 int smbus_block_read(device_t dev, u8 cmd, u8 bytes, u8 *buffer);
 int smbus_block_write(device_t dev, u8 cmd, u8 bytes, const u8 *buffer);
+
+int smbus_extended_read_byte(device_t dev, u16 addr);
+int smbus_extended_write_byte(device_t dev, u16 addr, u8 val);
 
 #endif /* DEVICE_SMBUS_H */

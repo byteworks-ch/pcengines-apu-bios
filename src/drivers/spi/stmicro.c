@@ -52,7 +52,6 @@
 #define STM_ID_M25P64		0x17
 #define STM_ID_M25P80		0x14
 #define STM_ID_M25P128		0x18
-#define STM_ID_N25Q256		0x19
 
 struct stmicro_spi_flash_params {
 	u8 idcode1;
@@ -130,13 +129,6 @@ static const struct stmicro_spi_flash_params stmicro_spi_flash_table[] = {
 		.pages_per_sector = 1024,
 		.nr_sectors = 64,
 		.name = "M25P128",
-	},
-	{
-		.idcode1 = STM_ID_N25Q256,
-		.page_size = 256,
-		.pages_per_sector = 256,
-		.nr_sectors = 512,
-		.name = "N25Q256",
 	},
 };
 

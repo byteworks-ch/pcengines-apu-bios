@@ -17,6 +17,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA, 02110-1301 USA
  */
 
+#include <smp/node.h>
 #include <bootblock_common.h>
 
 static void main(unsigned long bist)

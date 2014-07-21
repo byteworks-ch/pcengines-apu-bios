@@ -4,6 +4,7 @@
  * Copyright (C) 2004 Tyan
  * (Written by Yinghai Lu <yhlu@tyan.com> for Tyan)
  * Copyright (C) 2004 Li-Ta Lo <ollie@lanl.gov>
+ * Copyright (C) 2014 Sage Electronic Engineering, LLC.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,14 +30,17 @@ struct bus *get_pbus_smbus(device_t dev)
 {
 	struct bus *pbus = dev->bus;
 
-	while (pbus && pbus->dev && !ops_smbus_bus(pbus))
+	while (pbus && pbus->dev && !ops_smbus_bus(pbus)) {
 		pbus = pbus->dev->bus;
+		if (pbus->dev->path.type == DEVICE_PATH_ROOT)
+			break;
+	}
 
 	if (!pbus || !pbus->dev || !pbus->dev->ops
 	    || !pbus->dev->ops->ops_smbus_bus) {
-		printk(BIOS_ALERT, "%s Cannot find SMBus bus operations",
+		printk(BIOS_ALERT, "Error: %s Cannot find SMBus bus operations\n",
 		       dev_path(dev));
-		die("");
+		pbus = NULL;
 	}
 
 	return pbus;
@@ -165,3 +169,16 @@ int smbus_block_write(device_t dev, u8 cmd, u8 bytes, const u8 *buffer)
 	return ops_smbus_bus(get_pbus_smbus(dev))->block_write(dev, cmd,
 							       bytes, buffer);
 }
+
+int smbus_extended_read_byte(device_t dev, u16 addr)
+{
+	CHECK_PRESENCE(extended_read_byte);
+	return ops_smbus_bus(get_pbus_smbus(dev))->extended_read_byte(dev, addr);
+}
+
+int smbus_extended_write_byte(device_t dev, u16 addr, u8 val)
+{
+	CHECK_PRESENCE(extended_write_byte);
+	return ops_smbus_bus(get_pbus_smbus(dev))->extended_write_byte(dev, addr, val);
+}
+

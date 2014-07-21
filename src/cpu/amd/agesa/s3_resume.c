@@ -17,8 +17,8 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,  MA 02110-1301 USA
  */
 
-#include "AGESA.h"
-#include "amdlib.h"
+#include <AGESA.h>
+#include <Lib/amdlib.h>
 #include <console/console.h>
 #include <cpu/x86/msr.h>
 #include <cpu/x86/mtrr.h>
@@ -26,10 +26,6 @@
 #include <cpu/x86/cache.h>
 #include <cbmem.h>
 #include <device/device.h>
-#include <device/pci.h>
-#ifndef __PRE_RAM__
-#include <device/pci_ops.h>
-#endif
 #include <arch/io.h>
 #include <arch/acpi.h>
 #include <string.h>
@@ -43,11 +39,27 @@
 #include <spi_flash.h>
 #endif
 
+const u32 mtrr_table_fixed_MTRR[] = {
+	0x250, 0x258, 0x259, 0x268,
+	0x269, 0x26A, 0x26B, 0x26C,
+	0x26D, 0x26E, 0x26F
+};
+
+const u32 mtrr_table_var_MTRR[] = {
+	0x200, 0x201, 0x202, 0x203,
+	0x204, 0x205, 0x206, 0x207,
+	0x208, 0x209, 0x20A, 0x20B,
+	0x20C, 0x20D, 0x20E, 0x20F,
+	SYS_CFG,
+	TOP_MEM,
+	TOP_MEM2
+};
+
 void restore_mtrr(void)
 {
-	u32 msr;
 	volatile UINT32 *msrPtr = (volatile UINT32 *)S3_DATA_MTRR_POS;
 	msr_t msr_data;
+	u32 i;
 
 	printk(BIOS_SPEW, "%s\n", __func__);
 
@@ -58,31 +70,13 @@ void restore_mtrr(void)
 	msr_data.lo |= SYSCFG_MSR_MtrrFixDramModEn;
 	wrmsr(SYS_CFG, msr_data);
 
-	/* Now restore the Fixed MTRRs */
-	msr_data.lo = *msrPtr;
-	msrPtr ++;
-	msr_data.hi = *msrPtr;
-	msrPtr ++;
-	wrmsr(0x250, msr_data);
-
-	msr_data.lo = *msrPtr;
-	msrPtr ++;
-	msr_data.hi = *msrPtr;
-	msrPtr ++;
-	wrmsr(0x258, msr_data);
-
-	msr_data.lo = *msrPtr;
-	msrPtr ++;
-	msr_data.hi = *msrPtr;
-	msrPtr ++;
-	wrmsr(0x259, msr_data);
-
-	for (msr = 0x268; msr <= 0x26F; msr++) {
+	/* Restore the Fixed MTRRs */
+	for (i = 0; i < (u32)sizeof(mtrr_table_fixed_MTRR)/sizeof(u32); i++) {
 		msr_data.lo = *msrPtr;
 		msrPtr ++;
 		msr_data.hi = *msrPtr;
 		msrPtr ++;
-		wrmsr(msr, msr_data);
+		wrmsr(mtrr_table_fixed_MTRR[i], msr_data);
 	}
 
 	/* Disable access to AMD RdDram and WrDram extension bits */
@@ -90,24 +84,17 @@ void restore_mtrr(void)
 	msr_data.lo &= ~SYSCFG_MSR_MtrrFixDramModEn;
 	wrmsr(SYS_CFG, msr_data);
 
-	/* Restore the Variable MTRRs */
-	for (msr = 0x200; msr <= 0x20F; msr++) {
+	/* Restore the Variable MTRRs, SYS_CFG, TOM, TOM2 */
+	for (i = 0; i < (u32)sizeof(mtrr_table_var_MTRR)/sizeof(u32); i++) {
 		msr_data.lo = *msrPtr;
 		msrPtr ++;
 		msr_data.hi = *msrPtr;
 		msrPtr ++;
-		wrmsr(msr, msr_data);
+		wrmsr(mtrr_table_var_MTRR[i], msr_data);
 	}
-
-	/* Restore SYSCFG MTRR */
-	msr_data.lo = *msrPtr;
-	msrPtr ++;
-	msr_data.hi = *msrPtr;
-	msrPtr ++;
-	wrmsr(SYS_CFG, msr_data);
 }
 
-inline void *backup_resume(void)
+void *backup_resume(void)
 {
 	void *resume_backup_memory;
 
@@ -155,6 +142,55 @@ void write_mtrr(struct spi_flash *flash, u32 *p_nvram_pos, unsigned idx)
 	*p_nvram_pos += 4;
 #endif
 }
+
+static int check_mtrr(u32 *p_nvram_pos, unsigned idx)
+{
+	msr_t *spi_data = (msr_t *)*p_nvram_pos;
+	msr_t msr_data = rdmsr(idx);
+	*p_nvram_pos += 8;
+	return (msr_data.hi != spi_data->hi) || (msr_data.lo != spi_data->lo);
+}
+
+/*
+ * Check to see if the MTRR data that exists in the nvram matches
+ * what the current MTRR settings are. If they match return 0.
+ * If they do not match return 1 and they will be written.
+ */
+static int check_saved_mtrr_data(u32 spi_data)
+{
+	msr_t msr_data;
+	int i;
+
+	/* Enable access to AMD RdDram and WrDram extension bits */
+	msr_data = rdmsr(SYS_CFG);
+	msr_data.lo |= SYSCFG_MSR_MtrrFixDramModEn;
+	wrmsr(SYS_CFG, msr_data);
+
+	/* Fixed MTRRs */
+	for (i = 0; i < (u32)sizeof(mtrr_table_fixed_MTRR)/sizeof(u32); i++) {
+		if (check_mtrr(&spi_data, mtrr_table_fixed_MTRR[i])) {
+			/*
+			 * The RdDram/WrDram extension bits will need to be configured
+			 * by the calling function prior to reading any MTRR registers.
+			 */
+			return 1;
+		}
+	}
+
+	/* Disable access to AMD RdDram and WrDram extension bits */
+	msr_data = rdmsr(SYS_CFG);
+	msr_data.lo &= ~SYSCFG_MSR_MtrrFixDramModEn;
+	wrmsr(SYS_CFG, msr_data);
+
+	/* Variable MTRRs, SYS_CFG, TOM, TOM2 */
+	for (i = 0; i < (u32)sizeof(mtrr_table_var_MTRR)/sizeof(u32); i++) {
+		if (check_mtrr(&spi_data, mtrr_table_var_MTRR[i]))
+			return 1;
+	}
+
+	printk(BIOS_DEBUG, "S3: MTRR nvram already written\n");
+	return 0; // All comparisons passed
+}
 #endif
 
 void OemAgesaSaveMtrr(void)
@@ -164,6 +200,9 @@ void OemAgesaSaveMtrr(void)
 	u32 nvram_pos = S3_DATA_MTRR_POS;
 	u32 i;
 	struct spi_flash *flash;
+
+	if (!check_saved_mtrr_data(nvram_pos))
+		return;
 
 	spi_init();
 
@@ -176,9 +215,7 @@ void OemAgesaSaveMtrr(void)
 	flash->spi->rw = SPI_WRITE_FLAG;
 	spi_claim_bus(flash->spi);
 
-#if !IS_ENABLED(CONFIG_S3_ALL_ONE_SECTOR)
 	flash->erase(flash, S3_DATA_MTRR_POS, S3_DATA_MTRR_SIZE);
-#endif
 
 	/* Enable access to AMD RdDram and WrDram extension bits */
 	msr_data = rdmsr(SYS_CFG);
@@ -186,28 +223,17 @@ void OemAgesaSaveMtrr(void)
 	wrmsr(SYS_CFG, msr_data);
 
 	/* Fixed MTRRs */
-	write_mtrr(flash, &nvram_pos, 0x250);
-	write_mtrr(flash, &nvram_pos, 0x258);
-	write_mtrr(flash, &nvram_pos, 0x259);
-
-	for (i = 0x268; i < 0x270; i++)
-		write_mtrr(flash, &nvram_pos, i);
+	for (i = 0; i < (u32)sizeof(mtrr_table_fixed_MTRR)/sizeof(u32); i++)
+		write_mtrr(flash, &nvram_pos, mtrr_table_fixed_MTRR[i]);
 
 	/* Disable access to AMD RdDram and WrDram extension bits */
 	msr_data = rdmsr(SYS_CFG);
 	msr_data.lo &= ~SYSCFG_MSR_MtrrFixDramModEn;
 	wrmsr(SYS_CFG, msr_data);
 
-	/* Variable MTRRs */
-	for (i = 0x200; i < 0x210; i++)
-		write_mtrr(flash, &nvram_pos, i);
-
-	/* SYS_CFG */
-	write_mtrr(flash, &nvram_pos, 0xC0010010);
-	/* TOM */
-	write_mtrr(flash, &nvram_pos, 0xC001001A);
-	/* TOM2 */
-	write_mtrr(flash, &nvram_pos, 0xC001001D);
+	/* Variable MTRRs, SYS_CFG, TOM, TOM2 */
+	for (i = 0; i < (u32)sizeof(mtrr_table_var_MTRR)/sizeof(u32); i++)
+		write_mtrr(flash, &nvram_pos, mtrr_table_var_MTRR[i]);
 
 	flash->spi->rw = SPI_WRITE_FLAG;
 	spi_release_bus(flash->spi);
@@ -232,50 +258,55 @@ void OemAgesaGetS3Info(S3_DATA_TYPE S3DataType, u32 *DataSize, void **Data)
 #ifndef __PRE_RAM__
 u32 OemAgesaSaveS3Info(S3_DATA_TYPE S3DataType, u32 DataSize, void *Data)
 {
-
-	u32 pos = S3_DATA_VOLATILE_POS;
-	u32 data;
-	u32 nvram_pos;
+	u32 pos;
 	struct spi_flash *flash;
+	u8 *new_data;
+	u32 bytes_to_process;
+	u32 nvram_pos;
 
-	if (S3DataType == S3DataTypeNonVolatile) {
+	if (S3DataType == S3DataTypeNonVolatile)
 		pos = S3_DATA_NONVOLATILE_POS;
-	} else {		/* S3DataTypeVolatile */
+	else
 		pos = S3_DATA_VOLATILE_POS;
-	}
 
 	spi_init();
 	flash = spi_flash_probe(0, 0, 0, 0);
 	if (!flash) {
-		printk(BIOS_DEBUG, "Could not find SPI device\n");
-		/* Dont make flow stop. */
+		printk(BIOS_DEBUG, "%s: Could not find SPI device\n", __func__);
+		/* Don't make flow stop. */
 		return AGESA_SUCCESS;
 	}
 
 	flash->spi->rw = SPI_WRITE_FLAG;
 	spi_claim_bus(flash->spi);
 
-#if IS_ENABLED(CONFIG_S3_ALL_ONE_SECTOR)
-	if (S3DataType == S3DataTypeNonVolatile) {
-		flash->erase(flash, S3_DATA_VOLATILE_POS, CONFIG_S3_DATA_SIZE );
-	}
-#else
-	if (S3DataType == S3DataTypeNonVolatile) {
-		flash->erase(flash, S3_DATA_NONVOLATILE_POS, S3_DATA_NONVOLATILE_SIZE);
-	} else {
-		flash->erase(flash, S3_DATA_VOLATILE_POS, S3_DATA_VOLATILE_SIZE);
-	}
-#endif
+	// initialize the incoming data array
+	new_data = (u8 *)malloc(DataSize + (u32)sizeof(DataSize));
+	memcpy(new_data, &DataSize, (u32)sizeof(DataSize)); // the size gets written first
+	memcpy(new_data + (u32)sizeof(DataSize), Data, DataSize);
+	DataSize += (u32)sizeof(DataSize); // add in the size of the data
 
-	nvram_pos = 0;
-	flash->write(flash, nvram_pos + pos, sizeof(DataSize), &DataSize);
+	for ( ; DataSize > 0; DataSize -= bytes_to_process) {
+		bytes_to_process = ( DataSize >= flash->sector_size) ? flash->sector_size : DataSize;
+		if (memcmp((u8 *)pos, (u8 *)new_data, bytes_to_process)) {
+			printk(BIOS_DEBUG, "%s: Data mismatch - write the data\n", __func__);
+			flash->erase(flash, pos, flash->sector_size);
+			for (nvram_pos = 0; \
+			     nvram_pos < bytes_to_process - (bytes_to_process % CONFIG_AMD_SB_SPI_TX_LEN); \
+			     nvram_pos += CONFIG_AMD_SB_SPI_TX_LEN) {
+				flash->write(flash, pos + nvram_pos, CONFIG_AMD_SB_SPI_TX_LEN, \
+				             (u8 *)(new_data + nvram_pos));
+			}
+			flash->write(flash, pos + nvram_pos, bytes_to_process % CONFIG_AMD_SB_SPI_TX_LEN, \
+			             (u8 *)(new_data + nvram_pos));
+		}
+		else
+			printk(BIOS_DEBUG, "%s: existing nvram data matched\n", __func__);
 
-	for (nvram_pos = 0; nvram_pos < DataSize - CONFIG_AMD_SB_SPI_TX_LEN; nvram_pos += CONFIG_AMD_SB_SPI_TX_LEN) {
-		data = *(u32 *) (Data + nvram_pos);
-		flash->write(flash, nvram_pos + pos + 4, CONFIG_AMD_SB_SPI_TX_LEN, (u8 *)(Data + nvram_pos));
+		new_data += bytes_to_process;
+		pos += bytes_to_process;
 	}
-	flash->write(flash, nvram_pos + pos + 4, DataSize % CONFIG_AMD_SB_SPI_TX_LEN, (u8 *)(Data + nvram_pos));
-
+	free(new_data);
 	flash->spi->rw = SPI_WRITE_FLAG;
 	spi_release_bus(flash->spi);
 

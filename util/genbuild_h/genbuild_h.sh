@@ -69,9 +69,6 @@ printf "#define COREBOOT_BUILD_DAY_BCD 0x%s\n" "$(date +%d)"
 printf "#define COREBOOT_BUILD_WEEKDAY_BCD 0x%s\n" "$(date +%w)"
 printf "#define COREBOOT_DMI_DATE \"%s\"\n" "$(date +%m/%d/%Y)"
 printf "\n"
-printf "#define COREBOOT_COMPILER \"%s\"\n" "$($CC --version | head -n1)"
-printf "#define COREBOOT_ASSEMBLER \"%s\"\n" "$($AS --version | head -n1)"
-printf "#define COREBOOT_LINKER \"%s\"\n" "$($LD --version | head -n1)"
 if [ "$ROUND_TIME" == "" ]; then
 	printf "#define COREBOOT_COMPILE_TIME \"%s\"\n" "$(date +%T)"
 else
@@ -83,6 +80,6 @@ printf "#define COREBOOT_COMPILE_DOMAIN \""
 get_domainname
 printf "\"\n"
 printf "#define COREBOOT_BUILD_JOB_NAME \"SageBios_PCEngines_APU\"\n"
-printf "#define COREBOOT_BUILD_NUMBER \"9\"\n"
+printf "#define COREBOOT_BUILD_NUMBER \"139\"\n"
 printf "#endif\n"
 

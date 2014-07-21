@@ -18,6 +18,7 @@
  */
 
 #include <arch/io.h>
+#include <reset.h>
 
 static void enable_rom(void)
 {
@@ -111,6 +112,21 @@ static void enable_clocks(void)
 
 static void bootblock_southbridge_init(void)
 {
+	u32 dword;
+	device_t dev;
+
+	/* Check the value of index 0x44 of BDF 0:14.3.
+	 * A non-zero value indicates that a improper reset
+	 * occurred and that a hard-reset should be performed.
+	 */
+	dev = PCI_DEV(0, 0x14, 0x03);
+	dword = pci_io_read_config32(dev, 0x44);
+	if (dword != 0x00000000) {
+		outb( 0x00, PCI_RESET_REGISTER);
+		outb( PCI_COLD_RESET, PCI_RESET_REGISTER);
+		while(1) ;
+	}
+
 	/* Setup the rom access for 2M */
 	enable_rom();
 	enable_prefetch();

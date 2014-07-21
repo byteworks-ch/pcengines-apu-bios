@@ -19,26 +19,17 @@
  */
 
 #include <arch/byteorder.h>
-#include <arch/stages.h>
 #include <console/console.h>
 #include <cpu/cpu.h>
-#include <fallback.h>
-#include <boot/coreboot_tables.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <cbfs.h>
 #include <lib.h>
-#if CONFIG_COLLECT_TIMESTAMPS
-#include <timestamp.h>
-#endif
+#include <bootmem.h>
+#include <payload_loader.h>
 
-/* Maximum physical address we can use for the coreboot bounce buffer. */
-#ifndef MAX_ADDR
-#define MAX_ADDR -1UL
-#endif
-
-/* from coreboot_ram.ld: */
+/* from ramstage.ld: */
 extern unsigned char _ram_seg;
 extern unsigned char _eram_seg;
 
@@ -77,114 +68,33 @@ struct segment {
 
 static unsigned long bounce_size, bounce_buffer;
 
-#if CONFIG_RELOCATABLE_RAMSTAGE
-static void get_bounce_buffer(struct lb_memory *mem, unsigned long req_size)
+static void get_bounce_buffer(unsigned long req_size)
 {
+	unsigned long lb_size;
+	void *buffer;
+
 	/* When the ramstage is relocatable there is no need for a bounce
 	 * buffer. All payloads should not overlap the ramstage.
 	 */
-	bounce_buffer = ~0UL;
-	bounce_size = 0;
-}
-#else
-static void get_bounce_buffer(struct lb_memory *mem, unsigned long req_size)
-{
-	unsigned long lb_size;
-	unsigned long mem_entries;
-	unsigned long buffer;
-	int i;
+	if (IS_ENABLED(CONFIG_RELOCATABLE_RAMSTAGE)) {
+		bounce_buffer = ~0UL;
+		bounce_size = 0;
+		return;
+	}
+
 	lb_size = lb_end - lb_start;
 	/* Plus coreboot size so I have somewhere
 	 * to place a copy to return to.
 	 */
 	lb_size = req_size + lb_size;
-	mem_entries = (mem->size - sizeof(*mem)) / sizeof(mem->map[0]);
-	buffer = 0;
-	for(i = 0; i < mem_entries; i++) {
-		unsigned long mstart, mend;
-		unsigned long msize;
-		unsigned long tbuffer;
-		if (mem->map[i].type != LB_MEM_RAM)
-			continue;
-		if (unpack_lb64(mem->map[i].start) > MAX_ADDR)
-			continue;
-		if (unpack_lb64(mem->map[i].size) < lb_size)
-			continue;
-		mstart = unpack_lb64(mem->map[i].start);
-		msize = MAX_ADDR - mstart +1;
-		if (msize > unpack_lb64(mem->map[i].size))
-			msize = unpack_lb64(mem->map[i].size);
-		mend = mstart + msize;
-		tbuffer = mend - lb_size;
-		if (tbuffer < buffer)
-			continue;
-		buffer = tbuffer;
-	}
-	bounce_buffer = buffer;
+
+	buffer = bootmem_allocate_buffer(lb_size);
+
+	printk(BIOS_SPEW, "Bounce Buffer at %p, %lu bytes\n", buffer, lb_size);
+
+	bounce_buffer = (uintptr_t)buffer;
 	bounce_size = req_size;
 }
-#endif /* CONFIG_RELOCATABLE_RAMSTAGE */
-
-static int valid_area(struct lb_memory *mem, unsigned long buffer,
-	unsigned long start, unsigned long len)
-{
-	/* Check through all of the memory segments and ensure
-	 * the segment that was passed in is completely contained
-	 * in RAM.
-	 */
-	int i;
-	unsigned long end = start + len;
-	unsigned long mem_entries = (mem->size - sizeof(*mem)) /
-		sizeof(mem->map[0]);
-
-	/* See if I conflict with the bounce buffer */
-	if (end >= buffer) {
-		return 0;
-	}
-
-	/* Walk through the table of valid memory ranges and see if I
-	 * have a match.
-	 */
-	for(i = 0; i < mem_entries; i++) {
-		uint64_t mstart, mend;
-		uint32_t mtype;
-		mtype = mem->map[i].type;
-		mstart = unpack_lb64(mem->map[i].start);
-		mend = mstart + unpack_lb64(mem->map[i].size);
-		if ((mtype == LB_MEM_RAM) && (start >= mstart) && (end < mend)) {
-			break;
-		}
-		if ((mtype == LB_MEM_TABLE) && (start >= mstart) && (end < mend)) {
-			printk(BIOS_ERR, "Payload is overwriting coreboot tables.\n");
-			break;
-		}
-	}
-	if (i == mem_entries) {
-		if (start < (1024*1024) && end <=(1024*1024)) {
-			printk(BIOS_DEBUG, "Payload (probably SeaBIOS) loaded"
-				" into a reserved area in the lower 1MB\n");
-			return 1;
-		}
-		printk(BIOS_ERR, "No matching ram area found for range:\n");
-		printk(BIOS_ERR, "  [0x%016lx, 0x%016lx)\n", start, end);
-		printk(BIOS_ERR, "Ram areas\n");
-		for(i = 0; i < mem_entries; i++) {
-			uint64_t mstart, mend;
-			uint32_t mtype;
-			mtype = mem->map[i].type;
-			mstart = unpack_lb64(mem->map[i].start);
-			mend = mstart + unpack_lb64(mem->map[i].size);
-			printk(BIOS_ERR, "  [0x%016lx, 0x%016lx) %s\n",
-				(unsigned long)mstart,
-				(unsigned long)mend,
-				(mtype == LB_MEM_RAM)?"RAM":"Reserved");
-
-		}
-		return 0;
-	}
-	return 1;
-}
-
 
 static int overlaps_coreboot(struct segment *seg)
 {
@@ -304,15 +214,16 @@ static int relocate_segment(unsigned long buffer, struct segment *seg)
 
 static int build_self_segment_list(
 	struct segment *head,
-	struct lb_memory *mem,
-	struct cbfs_payload *payload, uintptr_t *entry)
+	struct payload *payload, uintptr_t *entry)
 {
 	struct segment *new;
 	struct segment *ptr;
 	struct cbfs_payload_segment *segment, *first_segment;
+	struct cbfs_payload *cbfs_payload;
+	cbfs_payload = payload->backing_store.data;
 	memset(head, 0, sizeof(*head));
 	head->next = head->prev = head;
-	first_segment = segment = &payload->segments;
+	first_segment = segment = &cbfs_payload->segments;
 
 	while(1) {
 		printk(BIOS_DEBUG, "Loading segment from rom address 0x%p\n", segment);
@@ -352,6 +263,9 @@ static int build_self_segment_list(
 				 	ntohl(segment->mem_len));
 			new = malloc(sizeof(*new));
 			new->s_filesz = 0;
+			new->s_srcaddr = (uintptr_t)
+				((unsigned char *)first_segment)
+				+ ntohl(segment->offset);
 			new->s_dstaddr = ntohll(segment->load_addr);
 			new->s_memsz = ntohl(segment->mem_len);
 			break;
@@ -396,33 +310,57 @@ static int build_self_segment_list(
 
 static int load_self_segments(
 	struct segment *head,
-	struct lb_memory *mem,
-	struct cbfs_payload *payload)
+	struct payload *payload)
 {
 	struct segment *ptr;
-
+	const unsigned long one_meg = (1UL << 20);
 	unsigned long bounce_high = lb_end;
+
 	for(ptr = head->next; ptr != head; ptr = ptr->next) {
+		if (bootmem_region_targets_usable_ram(ptr->s_dstaddr,
+							ptr->s_memsz))
+			continue;
+
+		if (ptr->s_dstaddr < one_meg &&
+		    (ptr->s_dstaddr + ptr->s_memsz) <= one_meg) {
+			printk(BIOS_DEBUG,
+				"Payload being loaded below 1MiB "
+				"without region being marked as RAM usable.\n");
+			continue;
+		}
+
+		/* Payload segment not targeting RAM. */
+		printk(BIOS_ERR, "SELF Payload doesn't target RAM:\n");
+		printk(BIOS_ERR, "Failed Segment: 0x%lx, %lu bytes\n",
+			ptr->s_dstaddr, ptr->s_memsz);
+		bootmem_dump_ranges();
+		return 0;
+	}
+
+	for(ptr = head->next; ptr != head; ptr = ptr->next) {
+		/*
+		 * Add segments to bootmem memory map before a bounce buffer is
+		 * allocated so that there aren't conflicts with the actual
+		 * payload.
+		 */
+		bootmem_add_range(ptr->s_dstaddr, ptr->s_memsz,
+					LB_MEM_UNUSABLE);
+
 		if (!overlaps_coreboot(ptr))
 			continue;
-#if CONFIG_RELOCATABLE_RAMSTAGE
-		/* payloads are required to not overlap ramstage. */
-		return 0;
-#else
 		if (ptr->s_dstaddr + ptr->s_memsz > bounce_high)
 			bounce_high = ptr->s_dstaddr + ptr->s_memsz;
-#endif
 	}
-	get_bounce_buffer(mem, bounce_high - lb_start);
+	get_bounce_buffer(bounce_high - lb_start);
 	if (!bounce_buffer) {
 		printk(BIOS_ERR, "Could not find a bounce buffer...\n");
 		return 0;
 	}
-	for(ptr = head->next; ptr != head; ptr = ptr->next) {
-		/* Verify the memory addresses in the segment are valid */
-		if (!valid_area(mem, bounce_buffer, ptr->s_dstaddr, ptr->s_memsz))
-			return 0;
-	}
+
+	/* Update the payload's bounce buffer data used when loading. */
+	payload->bounce.data = (void *)(uintptr_t)bounce_buffer;
+	payload->bounce.size = bounce_size;
+
 	for(ptr = head->next; ptr != head; ptr = ptr->next) {
 		unsigned char *dest, *src;
 		printk(BIOS_DEBUG, "Loading Segment: addr: 0x%016lx memsz: 0x%016lx filesz: 0x%016lx\n",
@@ -480,7 +418,7 @@ static int load_self_segments(
 				/* Zero the extra bytes */
 				memset(middle, 0, end - middle);
 			}
-			/* Copy the data that's outside the area that shadows coreboot_ram */
+			/* Copy the data that's outside the area that shadows ramstage */
 			printk(BIOS_DEBUG, "dest %p, end %p, bouncebuffer %lx\n", dest, end, bounce_buffer);
 			if ((unsigned long)end > bounce_buffer) {
 				if ((unsigned long)dest < bounce_buffer) {
@@ -503,17 +441,17 @@ static int load_self_segments(
 	return 1;
 }
 
-void *selfload(struct lb_memory *mem, struct cbfs_payload *payload)
+void *selfload(struct payload *payload)
 {
 	uintptr_t entry = 0;
 	struct segment head;
 
 	/* Preprocess the self segments */
-	if (!build_self_segment_list(&head, mem, payload, &entry))
+	if (!build_self_segment_list(&head, payload, &entry))
 		goto out;
 
 	/* Load the segments */
-	if (!load_self_segments(&head, mem, payload))
+	if (!load_self_segments(&head, payload))
 		goto out;
 
 	printk(BIOS_SPEW, "Loaded segments\n");
@@ -522,25 +460,4 @@ void *selfload(struct lb_memory *mem, struct cbfs_payload *payload)
 
 out:
 	return NULL;
-}
-
-void selfboot(void *entry)
-{
-	/* Reset to booting from this image as late as possible */
-	boot_successful();
-
-	printk(BIOS_DEBUG, "Jumping to boot code at %p\n", entry);
-	post_code(POST_ENTER_ELF_BOOT);
-
-#if CONFIG_COLLECT_TIMESTAMPS
-	timestamp_add_now(TS_SELFBOOT_JUMP);
-#endif
-
-	/* Before we go off to run the payload, see if
-	 * we stayed within our bounds.
-	 */
-	checkstack(_estack, 0);
-
-	/* Jump to kernel */
-	jmp_to_elf_entry(entry, bounce_buffer, bounce_size);
 }

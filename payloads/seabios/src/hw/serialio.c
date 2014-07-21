@@ -13,6 +13,8 @@
 #include "hw/pci.h"
 #include "hw/pci_ids.h"
 #include "hw/pci_regs.h"
+#include "hw/rtc.h"
+#include "string.h"
 
 /****************************************************************
  * Serial port debug output
@@ -20,12 +22,21 @@
 
 #define DEBUG_TIMEOUT 100000
 
+#if CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE
+int cmos_serial_console_debug_level = 1;
+#endif
+
 // Setup the debug serial port for output.
 void
 serial_debug_preinit(void)
 {
     if (!CONFIG_DEBUG_SERIAL)
         return;
+#if CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE
+    if (CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE)
+        check_cmos_debug_level();
+#endif
+
     // setup for serial logging: 8N1
     u8 oldparam, newparam = 0x03;
     oldparam = inb(CONFIG_DEBUG_SERIAL_PORT+SEROFF_LCR);
@@ -46,6 +57,10 @@ serial_debug(char c)
 {
     if (!CONFIG_DEBUG_SERIAL)
         return;
+#if CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE
+    if (CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE && !cmos_serial_console_debug_level)
+        return;
+#endif
     int timeout = DEBUG_TIMEOUT;
     while ((inb(CONFIG_DEBUG_SERIAL_PORT+SEROFF_LSR) & 0x20) != 0x20)
         if (!timeout--)
@@ -91,107 +106,38 @@ qemu_debug_putc(char c)
         outb(c, GET_GLOBAL(DebugOutputPort));
 }
 
-/****************************************************************
- * I2C Console
- ****************************************************************/
-
-/* variables/struct used by i2c console */
-/* TODO: These are defined as global in order to get it to build.
- *       They are only used locally.
+#if CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE
+/*
+ * Find the index/offset/width settings of the "debug_level" value in
+ * the cmos_layout.bin file in CBFS. Read the setting out of CMOS.
+ * If the setiing is zero all serial console output will be prevented.
  */
-#define SMB_BFD_0_20_0 0xA0 /* the AMD SMB controller is on bus=0 device=20 ftn=0 */
-#define BASE_IN_PM_SPACE 1
-#define BASE_IN_PCI_SPACE 2
-
-int i2c_amd_iobase VARFSEG = 0;
-struct amd_i2c_list{
-    u16 sb_vendor;
-    u16 sb_device;
-    u8  sb_revision;
-    u16  sb_access; /* 1=PM_reg 2=PCI_cfg */
-};
-struct amd_i2c_list amd_smbus_table[] VARFSEG = {
-    { PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_SBX00_SMBUS, 0x3C, BASE_IN_PCI_SPACE }, /* SB700 */
-    { PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_SBX00_SMBUS, 0x42, BASE_IN_PM_SPACE },  /* SB800 */
-    { PCI_VENDOR_ID_ATI, PCI_DEVICE_ID_ATI_SB900_SM,    0x14, BASE_IN_PM_SPACE },  /* SB900 */
-};
-
-void i2c_debug_preinit(void)
+void VISIBLE32FLAT
+check_cmos_debug_level(void)
 {
-	if (!CONFIG_DEBUG_I2C)
-		return;
+    const char *rom_address = (char *)0xFF000000;
+    const char string[] = {"debug_level"};
+    u8 cmos_byte_address = 0;
+    u8 cmos_byte_remainder = 0;
+    u8 cmos_byte_mask = 0;
+    u8 i;
+    struct cmos_entries *cmos_table;
 
-	u16 i, sb_base_access = 0;
-	u16 rd_vendor, rd_device, rd_revision;
+    // first find where there is data in the rom
+    while ( *(u32 *)rom_address == 0xffffffff)
+        rom_address = (char *)(((u32)rom_address >> 1) | 0x80000000);
 
-	rd_vendor = pci_config_readw(SMB_BFD_0_20_0, PCI_VENDOR_ID);
-	rd_device = pci_config_readw(SMB_BFD_0_20_0, PCI_DEVICE_ID);
-	rd_revision = pci_config_readw(SMB_BFD_0_20_0, 0x08);
-	/* check for the AMD/ATI southbridges */
-	for ( i = 0 ; i < sizeof(amd_smbus_table)/sizeof(amd_smbus_table[0]); ++i) {
-		if (amd_smbus_table[i].sb_vendor == rd_vendor) {
-			if (amd_smbus_table[i].sb_device == rd_device) {
-				if((amd_smbus_table[i].sb_revision & 0xf8) == (rd_revision & 0xf8)) {
-					sb_base_access = amd_smbus_table[i].sb_access;
-					break;
-				}
-			}
-		}
-	}
+    while (strnicmp(rom_address, string, strlen(string))) {
+        rom_address++;
+        if (rom_address == (char *)0xffffffff)
+            return;
+    }
 
-	switch (sb_base_access) {
-	case BASE_IN_PM_SPACE:
-		if (CONFIG_DEBUG_I2C_BUS == 0)
-			i = 0x2C; /* smbus pm index */
-		else if (CONFIG_DEBUG_I2C_BUS == 1)
-			i = 0x28; /* ASF pm index */
-		else
-			break;
-		outb (i + 1, 0xCD6);
-		i2c_amd_iobase = inb(0xCD7) << 8;
-		outb (i, 0xCD6);
-		i2c_amd_iobase |= inb(0xCD7);
-		break;
-	case BASE_IN_PCI_SPACE:
-		i2c_amd_iobase = pci_config_readw(SMB_BFD_0_20_0, 0x90);
-		break;
-	default:
-		i2c_amd_iobase = 0;
-		break;
-	}
-
-	if ((i2c_amd_iobase != 0) && ((i2c_amd_iobase & 0x01) == 0x01)) {
-		i2c_amd_iobase &= 0xffe0; /* Found a valid address */
-	}
-	else { /* can not find a valid base address */
-		i2c_amd_iobase = 0;
-	}
-	/* add checks for other vendors SMBUS controllers here */
+    cmos_table = (struct cmos_entries *)((u32)rom_address - sizeof(struct cmos_entries) + CMOS_MAX_NAME_LENGTH);
+    cmos_byte_address = cmos_table->bit / 8;
+    cmos_byte_remainder = cmos_table->bit % 8;
+    for (i = 0; i < cmos_table->length; i++)
+        cmos_byte_mask = (cmos_byte_mask << 1) | 1;
+    cmos_serial_console_debug_level = (rtc_read(cmos_byte_address) >> cmos_byte_remainder) & cmos_byte_mask;
 }
-
-/* send a debug character to the i2c port */
-void i2c_debug_putc(char c)
-{
-	/* check to see if we already tried init and it failed */
-	if (!CONFIG_DEBUG_I2C || (i2c_amd_iobase == 0))
-		return;
-
-	/* this sequence will send out addr/data on the AMD SBx00 smbus */
-	/* check to see if the h/w is idle */
-	int timeout = DEBUG_TIMEOUT;
-	do {
-		if (!timeout--)
-			return; // Ran out of time.
-	} while ((inb(i2c_amd_iobase) & 0x01) != 0x00);
-
-	outb (0xFF, i2c_amd_iobase + 0);     // clear error status
-	outb (0x1F, i2c_amd_iobase + 1);     // clear error status
-	outb (c, i2c_amd_iobase + 3);     // tx index
-	outb (CONFIG_DEBUG_I2C_DEVICE_ADDR, i2c_amd_iobase + 4);  // slave address and write bit
-	outb (0x44, i2c_amd_iobase + 2);     // command it to go
-	/* check to see if the h/w is done */
-	do {
-		if (!timeout--)
-			return; // Ran out of time.
-	} while ((inb(i2c_amd_iobase) & 0x01) != 0x00);
-}
+#endif

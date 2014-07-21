@@ -70,6 +70,18 @@ void rtc_setup(void);
 void rtc_use(void);
 void rtc_release(void);
 
+// this must match the definition in coreboots coreboot_tables.h
+struct cmos_entries {
+    u32 tag;                /* entry type */
+    u32 size;               /* length of this record */
+    u32 bit;                /* starting bit from start of image */
+    u32 length;             /* length of field in bits */
+    u32 config;             /* e=enumeration, h=hex, r=reserved */
+    u32 config_id;          /* a number linking to an enumeration record */
+#define CMOS_MAX_NAME_LENGTH 32
+    u8 name[CMOS_MAX_NAME_LENGTH]; /* name of entry in ascii */
+};
+
 #endif // !__ASSEMBLY__
 
 #endif // rtc.h

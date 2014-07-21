@@ -26,13 +26,18 @@
 #define SEROFF_LSR     5
 #define SEROFF_MSR     6
 
+#if CONFIG_INT10_SERIAL_CONSOLE
+#define UART_OUTPUT_ENABLED  0xED
+#define UART_OUTPUT_DISABLED 0xDE
+#endif
+
 void serial_debug_preinit(void);
 void serial_debug_putc(char c);
 void serial_debug_flush(void);
 extern u16 DebugOutputPort;
 void qemu_debug_putc(char c);
-
-void i2c_debug_preinit(void);
-void i2c_debug_putc(char c);
+#if CONFIG_CHECK_CMOS_SETTING_FOR_CONSOLE_ENABLE
+void check_cmos_debug_level(void);
+#endif
 
 #endif // serialio.h

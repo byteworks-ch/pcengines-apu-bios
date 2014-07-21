@@ -349,6 +349,10 @@ uart_check_keystrokes(void)
 {
     u8 rx_buf[5], rx_bytes = 0, ascii_code = 0, scan_code = 0;
 
+    // check to see if there is a active serial port
+    if (inb(CONFIG_DEBUG_SERIAL_PORT + SEROFF_LSR) == 0xFF)
+        return;
+
     while (inb(CONFIG_DEBUG_SERIAL_PORT + SEROFF_LSR) & 0x01) {
         if (rx_bytes > sizeof(rx_buf)) {
             dprintf(1, "uart_check_keystrokes: error too many bytes are available\n");

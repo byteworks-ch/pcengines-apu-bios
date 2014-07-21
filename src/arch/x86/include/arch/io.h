@@ -2,7 +2,7 @@
 #define _ASM_IO_H
 
 #include <stdint.h>
-#include <arch/rules.h>
+#include <rules.h>
 
 /*
  * This file contains the definitions for the x86 IO instructions
@@ -198,7 +198,10 @@ static inline int log2f(int value)
 }
 #endif
 
-#ifdef __SIMPLE_DEVICE__
+#define PCI_DEV(SEGBUS, DEV, FN) ( \
+        (((SEGBUS) & 0xFFF) << 20) | \
+        (((DEV) & 0x1F) << 15) | \
+        (((FN)  & 0x07) << 12))
 
 #define PCI_ADDR(SEGBUS, DEV, FN, WHERE) ( \
         (((SEGBUS) & 0xFFF) << 20) | \
@@ -206,16 +209,13 @@ static inline int log2f(int value)
         (((FN) & 0x07) << 12) | \
         ((WHERE) & 0xFFF))
 
-#define PCI_DEV(SEGBUS, DEV, FN) ( \
-        (((SEGBUS) & 0xFFF) << 20) | \
-        (((DEV) & 0x1F) << 15) | \
-        (((FN)  & 0x07) << 12))
-
 #define PCI_ID(VENDOR_ID, DEVICE_ID) \
 	((((DEVICE_ID) & 0xFFFF) << 16) | ((VENDOR_ID) & 0xFFFF))
 
 
 #define PNP_DEV(PORT, FUNC) (((PORT) << 8) | (FUNC))
+
+#ifdef __SIMPLE_DEVICE__
 
 /* FIXME: Sources for romstage still use device_t. */
 typedef u32 device_t;

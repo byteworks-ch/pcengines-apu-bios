@@ -200,6 +200,8 @@ struct lb_framebuffer {
 struct lb_gpio {
 	uint32_t port;
 	uint32_t polarity;
+#define ACTIVE_LOW	0
+#define ACTIVE_HIGH	1
 	uint32_t value;
 #define GPIO_MAX_NAME_LENGTH 16
         uint8_t name[GPIO_MAX_NAME_LENGTH];
@@ -329,14 +331,12 @@ unsigned long write_coreboot_table(
 	unsigned long low_table_start, unsigned long low_table_end,
 	unsigned long rom_table_start, unsigned long rom_table_end);
 
-void lb_add_memory_range(struct lb_memory *mem,
-	uint32_t type, uint64_t start, uint64_t size);
-
-/* Routines to extract part so the coreboot table or information
- * from the coreboot table.
- */
-struct lb_memory *get_lb_mem(void);
-
 void fill_lb_gpios(struct lb_gpios *gpios);
+void fill_lb_gpio(struct lb_gpio *gpio, int num,
+			 int polarity, const char *name, int value);
+
+void uart_fill_lb(void *data);
+void lb_add_serial(struct lb_serial *serial, void *data);
+void lb_add_console(uint16_t consoletype, void *data);
 
 #endif /* COREBOOT_TABLES_H */

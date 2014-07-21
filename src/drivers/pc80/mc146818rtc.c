@@ -33,7 +33,7 @@
 
 void rtc_update_cmos_date(u8 has_century)
 {
-	/* Now setup a default date equals to the build date */
+	/* Setup a default date equal to the build date */
 	cmos_write(0, RTC_CLK_SECOND);
 	cmos_write(0, RTC_CLK_MINUTE);
 	cmos_write(1, RTC_CLK_HOUR);
@@ -44,7 +44,7 @@ void rtc_update_cmos_date(u8 has_century)
 	if (has_century) cmos_write(COREBOOT_BUILD_CENTURY_BCD, RTC_CLK_ALTCENTURY);
 }
 
-#ifndef __SMM__
+#if IS_ENABLED(CONFIG_USE_OPTION_TABLE)
 static int rtc_checksum_valid(int range_start, int range_end, int cks_loc)
 {
 	int i;
@@ -102,28 +102,23 @@ void rtc_init(int invalid)
 
 	printk(BIOS_DEBUG, "RTC Init\n");
 
-#if IS_ENABLED(CONFIG_USE_OPTION_TABLE)
-#define CLEAR_CMOS 0
-#else
-#define CLEAR_CMOS 1
-#endif
-
 	/* See if there has been a CMOS power problem. */
 	x = cmos_read(RTC_VALID);
 	cmos_invalid = !(x & RTC_VRT);
 
+#if IS_ENABLED(CONFIG_USE_OPTION_TABLE)
 	/* See if there is a CMOS checksum error */
 	checksum_invalid = !rtc_checksum_valid(PC_CKS_RANGE_START,
 			PC_CKS_RANGE_END,PC_CKS_LOC);
-
+#endif
 
 	if (invalid || cmos_invalid || checksum_invalid) {
-#if CLEAR_CMOS
-		int i;
 
+#if !IS_ENABLED(CONFIG_USE_OPTION_TABLE)
 		cmos_write(0, RTC_CLK_SECOND_ALARM);
 		cmos_write(0, RTC_CLK_MINUTE_ALARM);
 		cmos_write(0, RTC_CLK_HOUR_ALARM);
+		int i;
 		for(i = 10; i < 128; i++) {
 			cmos_write(0, i);
 		}
@@ -136,7 +131,7 @@ void rtc_init(int invalid)
 			invalid?" Clear requested":"",
 			cmos_invalid?" Power Problem":"",
 			checksum_invalid?" Checksum invalid":"",
-			CLEAR_CMOS?" zeroing cmos":"");
+			!IS_ENABLED(CONFIG_USE_OPTION_TABLE)?" zeroing cmos":"");
 	}
 
 	/* Setup the real time clock */
@@ -152,15 +147,16 @@ void rtc_init(int invalid)
 			LB_CKS_RANGE_END,LB_CKS_LOC);
 	if(checksum_invalid)
 		printk(BIOS_DEBUG, "RTC: coreboot checksum invalid\n");
-#endif
 
 	/* Make certain we have a valid checksum */
-	rtc_set_checksum(PC_CKS_RANGE_START, PC_CKS_RANGE_END, PC_CKS_LOC);
+	rtc_set_checksum(PC_CKS_RANGE_START,
+                        PC_CKS_RANGE_END,PC_CKS_LOC);
+#endif
 
 	/* Clear any pending interrupts */
 	(void) cmos_read(RTC_INTR_FLAGS);
 }
-#endif
+#endif /* ifndef __SMM__ */
 
 
 #if IS_ENABLED(CONFIG_USE_OPTION_TABLE)

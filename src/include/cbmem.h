@@ -61,12 +61,15 @@
 #define CBMEM_ID_EHCI_DEBUG	0xe4c1deb9
 #define CBMEM_ID_REFCODE	0x04efc0de
 #define CBMEM_ID_REFCODE_CACHE	0x4efc0de5
+#define CBMEM_ID_SMM_SAVE_SPACE	0x07e9acee
+#define CBMEM_ID_RAM_OOPS	0x05430095
 #define CBMEM_ID_NONE		0x00000000
 #define CBMEM_ID_AGESA_RUNTIME	0x41474553
 #define CBMEM_ID_HOB_POINTER		0x484f4221
 #define CBMEM_ID_BOOTORDER		0x424f4f54
 
 #ifndef __ASSEMBLER__
+#include <stddef.h>
 #include <stdint.h>
 
 struct cbmem_entry;
@@ -151,6 +154,10 @@ void cbmem_late_set_table(uint64_t base, uint64_t size);
 void get_cbmem_table(uint64_t *base, uint64_t *size);
 struct cbmem_entry *get_cbmem_toc(void);
 
+static inline const struct cbmem_entry *cbmem_entry_find(uint32_t id)
+{
+	return NULL;
+}
 #endif /* CONFIG_DYNAMIC_CBMEM */
 
 /* Common API between cbmem and dynamic cbmem. */
@@ -169,9 +176,8 @@ void *cbmem_find(u32 id);
 
 #ifndef __PRE_RAM__
 /* Ramstage only functions. */
-/* Add the cbmem memory used to the memory tables. */
-struct lb_memory;
-void cbmem_add_lb_mem(struct lb_memory *mem);
+/* Add the cbmem memory used to the memory map at boot. */
+void cbmem_add_bootmem(void);
 void cbmem_list(void);
 void cbmem_arch_init(void);
 void cbmem_print_entry(int n, u32 id, u64 start, u64 size);

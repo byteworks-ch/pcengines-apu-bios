@@ -4,6 +4,7 @@
 #include <cpu/x86/lapic_def.h>
 #include <cpu/x86/msr.h>
 #include <arch/hlt.h>
+#include <smp/node.h>
 
 /* See if I need to initialize the local apic */
 #if CONFIG_SMP || CONFIG_IOAPIC
@@ -129,9 +130,6 @@ static inline int lapic_remote_read(int apicid, int reg, unsigned long *pvalue)
 	lapic_write_around(LAPIC_ICR, LAPIC_DM_REMRD | (reg >> 4));
 	timeout = 0;
 	do {
-#if 0
-		udelay(100);
-#endif
 		status = lapic_read(LAPIC_ICR) & LAPIC_ICR_RR_MASK;
 	} while (status == LAPIC_ICR_RR_INPROG && timeout++ < 1000);
 
@@ -152,11 +150,5 @@ int start_cpu(struct device *cpu);
 #endif /* CONFIG_SMP */
 
 #endif /* !__PRE_RAM__ */
-
-#if CONFIG_SMP
-int boot_cpu(void);
-#else
-#define boot_cpu(x) 1
-#endif
 
 #endif /* CPU_X86_LAPIC_H */

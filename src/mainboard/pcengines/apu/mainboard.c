@@ -37,6 +37,7 @@
 #include <southbridge/amd/cimx/sb800/pci_devs.h>
 #include <northbridge/amd/agesa/family14/pci_devs.h>
 #include "gpio_ftns.h"
+#include <pc80/mc146818rtc.h>
 
 void set_pcie_reset(void);
 void set_pcie_dereset(void);
@@ -44,6 +45,7 @@ const char *smbios_mainboard_serial_number(void);
 const char *smbios_mainboard_sku(void);
 
 char tmp[10];
+int cmos_console_setting = 0;
 
 /***********************************************************
  * These arrays set up the FCH PCI_INTR registers 0xC00/0xC01.
@@ -62,7 +64,7 @@ char tmp[10];
  */
 u8 mainboard_picr_data[FCH_INT_TABLE_SIZE] = {
 	[0x00] = 0x0A,0x0B,0x0A,0x0B,0x0A,0x0B,0x0A,0x0B,	/* INTA# - INTH# */
-	[0x08] = 0x00,0xF0,0x00,0x00,0x1F,0x1F,0x1F,0x1F,	/* Misc-nil,0,1,2, INT from Serial irq */
+	[0x08] = 0x00,0xF1,0x00,0x00,0x1F,0x1F,0x1F,0x1F,	/* Misc-nil,0,1,2, INT from Serial irq */
 	[0x10] = 0x1F,0x1F,0x1F,0x0A,0x1F,0x1F,0x1F,		/* SCI, SMBUS0, ASF, HDA, FC, GEC, PerMon */
 	[0x20] = 0x1F,0x1F,0x1F,0x1F,0x1F,0x1F,				/* IMC INT0 - 5 */
 	[0x30] = 0x0A,0x0B,0x0A,0x0B,0x1F,0x1F,0x0A,		/* USB Devs 18/19/20/22 INTA-C */
@@ -142,7 +144,6 @@ static void pirq_setup(void)
 #define SIO_LDN_DIS     0x00
 #define BOOTORDER_SIZE  4096
 
-static u8 com1_enabled = 0;
 /**
  * TODO
  * SB CIMx callback
@@ -174,38 +175,11 @@ static void mainboard_enable(device_t dev)
 	acpi_slp_type = acpi_get_sleep_type();
 #endif
 
-	/*
-	 * If the COM1 serial console was disabled in romstage.c we need to disable
-	 * PNP device 2E.02 which is enabled by default in the devicetree.cb.
-	 */
-	outb( SIO_UNLOCK,   CONFIG_SIO_PORT);     /* unlock SIO */
-	outb( SIO_UNLOCK,   CONFIG_SIO_PORT);     /* unlock SIO */
-	outb( SIO_LDN_SEL,  CONFIG_SIO_PORT);     /* select LDN */
-	outb( SIO_COM1_LDN, CONFIG_SIO_PORT + 1); /* select LDN=2 */
-	outb( SIO_ENB_REG,  CONFIG_SIO_PORT);     /* select ENABLE REG */
-	com1_enabled = inb(CONFIG_SIO_PORT + 1);  /* read it */
-	outb( SIO_LOCK,     CONFIG_SIO_PORT);     /* lock SIO */
-
-	if (!com1_enabled) {
-		printk(BIOS_INFO, "Disabling device %x.02\n", CONFIG_SIO_PORT);
-
-		device_t lpc_bus = dev_find_slot(0, PCI_DEVFN(0x14, 3));
-		struct bus *dbus = lpc_bus->link_list;;
-		struct device_path com_path;
-		com_path.type = DEVICE_PATH_PNP;
-		com_path.pnp.port = CONFIG_SIO_PORT;
-		com_path.pnp.device = 2; // COM1
-
-		device_t com1 = find_dev_path(dbus, &com_path);
-		if (com1)
-			com1->enabled = 0;
-	}
-
 	/* Initialize the PIRQ data structures for consumption */
 	pirq_setup();
-
 }
 
+#if IS_ENABLED(CONFIG_MAINBOARD_BOOTORDER)
 /*
  * If the COM1 serial console was enabled in romstage.c we need to allow the
  * sortbootorder payload (aka "setup") to be a bootable device. If COM1 is
@@ -237,7 +211,8 @@ void get_mainboard_bootorder_table( struct bootorder_container *bootorder_ptr, c
 	if (mem_ptr) {
 		for ( ; ; ) {
 			if (*mem_ptr == 0) { // Check for end of data
-				if (com1_enabled)
+				get_option(&cmos_console_setting, "debug_level");
+				if (cmos_console_setting)
 					str_ptr++; // if enabled don't add the '!'
 				strncpy(mem_ptr, str_ptr, strlen(str_ptr));
 				mem_ptr[strlen(str_ptr)] = 0; // Mark the new end of data
@@ -248,6 +223,7 @@ void get_mainboard_bootorder_table( struct bootorder_container *bootorder_ptr, c
 	}
 	*data_ptr = data_buf; // update the data_ptr to point to the new data instead of CBFS
 }
+#endif
 
 /*
  * We will stuff a modified version of the first NICs (BDF 1:0.0) MAC address
@@ -307,6 +283,17 @@ static void mainboard_final(void *chip_info)
 	configure_gpio(mmio_base, GPIO_189, GPIO_FTN_1, GPIO_OUTPUT | GPIO_DATA_LOW);
 	configure_gpio(mmio_base, GPIO_190, GPIO_FTN_1, GPIO_OUTPUT | GPIO_DATA_HIGH);
 	configure_gpio(mmio_base, GPIO_191, GPIO_FTN_1, GPIO_OUTPUT | GPIO_DATA_HIGH);
+
+	/* show how much system memory there is */
+	msr_t mem_tom, mem_tom2;
+	mem_tom = rdmsr(TOP_MEM_MSR);
+	mem_tom2 = rdmsr(TOP_MEM2_MSR);
+	u64 tom_size = ((u64)mem_tom.hi << 32) + mem_tom.lo;
+	u64 tom2_size = ((u64)mem_tom2.hi << 32) + mem_tom2.lo;
+	u32 mem_total = (u32)(tom_size / 0x100000);
+	if (tom2_size)
+		mem_total += (u32)((tom2_size - 0x100000000) / 0x100000);
+	printk(BIOS_CRIT, "System memory size: %d MB\n", mem_total);
 }
 
 struct chip_operations mainboard_ops = {

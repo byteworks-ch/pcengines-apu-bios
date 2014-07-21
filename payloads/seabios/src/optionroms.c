@@ -239,7 +239,7 @@ run_file_roms(const char *prefix, int isvga, u64 *sources)
         if (!file)
             break;
 
-        if ( pxe_skip && !strcmp(file->name,"genroms/pxeboot.rom"))
+        if ( pxe_skip && strstr(file->name,"pxe"))
                 continue;
 
         struct rom_header *rom = deploy_romfile(file);

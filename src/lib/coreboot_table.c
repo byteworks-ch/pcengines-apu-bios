@@ -21,6 +21,7 @@
  */
 
 #include <console/console.h>
+#include <console/uart.h>
 #include <ip_checksum.h>
 #include <boot/coreboot_tables.h>
 #include <string.h>
@@ -29,7 +30,7 @@
 #include <stdlib.h>
 #include <cbfs.h>
 #include <cbmem.h>
-#include <memrange.h>
+#include <bootmem.h>
 #if IS_ENABLED(CONFIG_CHROMEOS)
 #if CONFIG_GENERATE_ACPI_TABLES
 #include <arch/acpi.h>
@@ -101,63 +102,28 @@ static struct lb_memory *lb_memory(struct lb_header *header)
 	return mem;
 }
 
-static struct lb_serial *lb_serial(struct lb_header *header)
+void lb_add_serial(struct lb_serial *new_serial, void *data)
 {
-#if CONFIG_CONSOLE_SERIAL8250
-	struct lb_record *rec;
+	struct lb_header *header = (struct lb_header *)data;
 	struct lb_serial *serial;
-	rec = lb_new_record(header);
-	serial = (struct lb_serial *)rec;
+
+	serial = (struct lb_serial *)lb_new_record(header);
 	serial->tag = LB_TAG_SERIAL;
 	serial->size = sizeof(*serial);
-	serial->type = LB_SERIAL_TYPE_IO_MAPPED;
-	serial->baseaddr = CONFIG_TTYS0_BASE;
-	serial->baud = CONFIG_TTYS0_BAUD;
-	return serial;
-#elif CONFIG_CONSOLE_SERIAL8250MEM || CONFIG_CONSOLE_SERIAL_UART
-	if (uartmem_getbaseaddr()) {
-		struct lb_record *rec;
-		struct lb_serial *serial;
-		rec = lb_new_record(header);
-		serial = (struct lb_serial *)rec;
-		serial->tag = LB_TAG_SERIAL;
-		serial->size = sizeof(*serial);
-		serial->type = LB_SERIAL_TYPE_MEMORY_MAPPED;
-		serial->baseaddr = uartmem_getbaseaddr();
-		serial->baud = CONFIG_TTYS0_BAUD;
-		return serial;
-	} else {
-		return NULL;
-	}
-#else
-	return NULL;
-#endif
+	serial->type = new_serial->type;
+	serial->baseaddr = new_serial->baseaddr;
+	serial->baud = new_serial->baud;
 }
 
-#if CONFIG_CONSOLE_SERIAL8250 || CONFIG_CONSOLE_SERIAL8250MEM || \
-	CONFIG_CONSOLE_SERIAL_UART || CONFIG_USBDEBUG
-static void add_console(struct lb_header *header, u16 consoletype)
+void lb_add_console(uint16_t consoletype, void *data)
 {
+	struct lb_header *header = (struct lb_header *)data;
 	struct lb_console *console;
 
 	console = (struct lb_console *)lb_new_record(header);
 	console->tag = LB_TAG_CONSOLE;
 	console->size = sizeof(*console);
 	console->type = consoletype;
-}
-#endif
-
-static void lb_console(struct lb_header *header)
-{
-#if CONFIG_CONSOLE_SERIAL8250
-	add_console(header, LB_TAG_CONSOLE_SERIAL8250);
-#endif
-#if CONFIG_CONSOLE_SERIAL8250MEM || CONFIG_CONSOLE_SERIAL_UART
-	add_console(header, LB_TAG_CONSOLE_SERIAL8250MEM);
-#endif
-#if CONFIG_USBDEBUG
-	add_console(header, LB_TAG_CONSOLE_EHCI);
-#endif
 }
 
 static void lb_framebuffer(struct lb_header *header)
@@ -179,6 +145,17 @@ static void lb_framebuffer(struct lb_header *header)
 }
 
 #if IS_ENABLED(CONFIG_CHROMEOS)
+void fill_lb_gpio(struct lb_gpio *gpio, int num,
+			 int polarity, const char *name, int value)
+{
+	memset(gpio, 0, sizeof(*gpio));
+	gpio->port = num;
+	gpio->polarity = polarity;
+	if (value >= 0)
+		gpio->value = value;
+	strncpy((char *)gpio->name, name, GPIO_MAX_NAME_LENGTH);
+}
+
 static void lb_gpios(struct lb_header *header)
 {
 	struct lb_gpios *gpios;
@@ -214,7 +191,7 @@ static void lb_vbnv(struct lb_header *header)
 #endif
 }
 
-#if CONFIG_VBOOT_VERIFY_FIRMWARE
+#if IS_ENABLED(CONFIG_VBOOT_VERIFY_FIRMWARE)
 static void lb_vboot_handoff(struct lb_header *header)
 {
 	void *addr;
@@ -234,24 +211,6 @@ static void lb_vboot_handoff(struct lb_header *header)
 static inline void lb_vboot_handoff(struct lb_header *header) {}
 #endif /* CONFIG_VBOOT_VERIFY_FIRMWARE */
 #endif /* CONFIG_CHROMEOS */
-
-static void lb_x86_rom_cache(struct lb_header *header)
-{
-#if CONFIG_ARCH_X86
-	long mtrr_index;
-	struct lb_x86_rom_mtrr *lb_x86_rom_mtrr;
-
-	mtrr_index = x86_mtrr_rom_cache_var_index();
-
-	if (mtrr_index < 0)
-		return;
-
-	lb_x86_rom_mtrr = (struct lb_x86_rom_mtrr *)lb_new_record(header);
-	lb_x86_rom_mtrr->tag = LB_TAG_X86_ROM_MTRR;
-	lb_x86_rom_mtrr->size = sizeof(struct lb_x86_rom_mtrr);
-	lb_x86_rom_mtrr->index = mtrr_index;
-#endif
-}
 
 static void add_cbmem_pointers(struct lb_header *header)
 {
@@ -325,9 +284,6 @@ static void lb_strings(struct lb_header *header)
 		{ LB_TAG_COMPILE_BY,     coreboot_compile_by,     },
 		{ LB_TAG_COMPILE_HOST,   coreboot_compile_host,   },
 		{ LB_TAG_COMPILE_DOMAIN, coreboot_compile_domain, },
-		{ LB_TAG_COMPILER,       coreboot_compiler,       },
-		{ LB_TAG_LINKER,         coreboot_linker,         },
-		{ LB_TAG_ASSEMBLER,      coreboot_assembler,      },
 	};
 	unsigned int i;
 	for(i = 0; i < ARRAY_SIZE(strings); i++) {
@@ -372,90 +328,11 @@ static unsigned long lb_table_fini(struct lb_header *head)
 	return (unsigned long)rec + rec->size;
 }
 
-/* Routines to extract part so the coreboot table or
- * information from the coreboot table after we have written it.
- * Currently get_lb_mem relies on a global we can change the
- * implementation.
- */
-static struct lb_memory *mem_ranges = NULL;
-
-struct lb_memory *get_lb_mem(void)
-{
-	return mem_ranges;
-}
-
-/* This structure keeps track of the coreboot table memory ranges. */
-static struct memranges lb_ranges;
-
-static struct lb_memory *build_lb_mem(struct lb_header *head)
-{
-	struct lb_memory *mem;
-
-	/* Record where the lb memory ranges will live */
-	mem = lb_memory(head);
-	mem_ranges = mem;
-
-	/* Fill the memory map out. The order of operations is important in
-	 * that each overlapping range will take over the next. Therefore,
-	 * add cacheable resources as RAM then add the reserved resources. */
-	memranges_init(&lb_ranges, IORESOURCE_CACHEABLE,
-	               IORESOURCE_CACHEABLE, LB_MEM_RAM);
-	memranges_add_resources(&lb_ranges, IORESOURCE_RESERVE,
-	                        IORESOURCE_RESERVE, LB_MEM_RESERVED);
-
-	return mem;
-}
-
-static void commit_lb_memory(struct lb_memory *mem)
-{
-	struct range_entry *r;
-	struct lb_memory_range *lb_r;
-	int i;
-
-	lb_r = &mem->map[0];
-	i = 0;
-
-	memranges_each_entry(r, &lb_ranges) {
-		const char *entry_type;
-
-		switch (range_entry_tag(r)) {
-		case LB_MEM_RAM: entry_type="RAM"; break;
-		case LB_MEM_RESERVED: entry_type="RESERVED"; break;
-		case LB_MEM_ACPI: entry_type="ACPI"; break;
-		case LB_MEM_NVS: entry_type="NVS"; break;
-		case LB_MEM_UNUSABLE: entry_type="UNUSABLE"; break;
-		case LB_MEM_VENDOR_RSVD: entry_type="VENDOR RESERVED"; break;
-		case LB_MEM_TABLE: entry_type="CONFIGURATION TABLES"; break;
-		default: entry_type="UNKNOWN!"; break;
-		}
-
-		printk(BIOS_DEBUG, "%2d. %016llx-%016llx: %s\n",
-			i, range_entry_base(r), range_entry_end(r)-1,
-			entry_type);
-
-		lb_r->start = pack_lb64(range_entry_base(r));
-		lb_r->size = pack_lb64(range_entry_size(r));
-		lb_r->type = range_entry_tag(r);
-
-		i++;
-		lb_r++;
-		mem->size += sizeof(struct lb_memory_range);
-	}
-}
-
-void lb_add_memory_range(struct lb_memory *mem,
-	uint32_t type, uint64_t start, uint64_t size)
-{
-	memranges_insert(&lb_ranges, start, size, type);
-}
-
-
 unsigned long write_coreboot_table(
 	unsigned long low_table_start, unsigned long low_table_end,
 	unsigned long rom_table_start, unsigned long rom_table_end)
 {
 	struct lb_header *head;
-	struct lb_memory *mem;
 
 	if (low_table_start || low_table_end) {
 		printk(BIOS_DEBUG, "Writing table forward entry at 0x%08lx\n",
@@ -494,43 +371,44 @@ unsigned long write_coreboot_table(
 	}
 #endif
 
-	/* The Linux kernel assumes this region is reserved */
-	/* Record where RAM is located */
-	mem = build_lb_mem(head);
+	/* Initialize the memory map at boot time. */
+	bootmem_init();
 
 	if (low_table_start || low_table_end) {
+		uint64_t size = low_table_end - low_table_start;
 		/* Record the mptable and the the lb_table.
 		 * (This will be adjusted later)  */
-		lb_add_memory_range(mem, LB_MEM_TABLE,
-			low_table_start, low_table_end - low_table_start);
+		bootmem_add_range(low_table_start, size, LB_MEM_TABLE);
 	}
 
 	/* Record the pirq table, acpi tables, and maybe the mptable. However,
 	 * these only need to be added when the rom_table is sitting below
 	 * 1MiB. If it isn't that means high tables are being written.
 	 * The code below handles high tables correctly. */
-	if (rom_table_end <= (1 << 20))
-		lb_add_memory_range(mem, LB_MEM_TABLE,
-			rom_table_start, rom_table_end - rom_table_start);
-
-	cbmem_add_lb_mem(mem);
+	if (rom_table_end <= (1 << 20)) {
+		uint64_t size = rom_table_end - rom_table_start;
+		bootmem_add_range(rom_table_start, size, LB_MEM_TABLE);
+	}
 
 	/* No other memory areas can be added after the memory table has been
 	 * committed as the entries won't show up in the serialize mem table. */
-	commit_lb_memory(mem);
+	bootmem_write_memory_table(lb_memory(head));
 
 	/* Record our motherboard */
 	lb_mainboard(head);
-	/* Record the serial port, if present */
-	lb_serial(head);
-	/* Record our console setup */
-	lb_console(head);
+
+	/* Record the serial ports and consoles */
+#if CONFIG_CONSOLE_SERIAL
+	uart_fill_lb(head);
+#endif
+#if CONFIG_CONSOLE_USB
+	lb_add_console(LB_TAG_CONSOLE_EHCI, head);
+#endif
+
 	/* Record our various random string information */
 	lb_strings(head);
 	/* Record our framebuffer */
 	lb_framebuffer(head);
-	/* Communicate x86 variable MTRR ROM cache information. */
-	lb_x86_rom_cache(head);
 
 #if IS_ENABLED(CONFIG_CHROMEOS)
 	/* Record our GPIO settings (ChromeOS specific) */
